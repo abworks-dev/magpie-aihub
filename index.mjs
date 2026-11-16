@@ -39,7 +39,7 @@ async function AIHubPlugin({ client }, initialOptions = {}) {
       provider: PROVIDER,
       methods: [
         {
-          type: 'api', label: '导入分组 Key（无需账号密码）',
+          type: 'api', keyless: true, label: '导入分组 Key（无需账号密码）',
           prompts: [{ type: 'password', key: 'keys', message: '分组 Key JSON 数组（保密保存）' }],
           authorize: async inputs => {
             try {
@@ -49,7 +49,7 @@ async function AIHubPlugin({ client }, initialOptions = {}) {
           },
         },
         {
-          type: 'api', label: 'AIHub 账户登录（可管理专用分组 Key）',
+          type: 'api', keyless: true, label: 'AIHub 账户登录（可管理专用分组 Key）',
           prompts: [
             { type: 'text', key: 'email', message: 'AIHub 邮箱' },
             { type: 'password', key: 'password', message: 'AIHub 密码（仅用于本次登录）' },

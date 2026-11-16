@@ -13,6 +13,8 @@ test('entry exports only supported module and registers correct config SDKs', as
   assert.equal(config.provider['aihub-auto'].models['chat-model'].provider.npm, '@ai-sdk/openai-compatible');
   assert.equal(hooks.auth.methods[0].prompts[0].type, 'password');
   assert.equal(hooks.auth.methods[1].prompts[1].type, 'password');
+  // Magpie otherwise asks for an unrelated extra API key after the custom prompts.
+  assert.ok(hooks.auth.methods.every(method => method.keyless === true && typeof method.authorize === 'function'));
 });
 
 test('manual auth bundle remains secret and loader uses dedicated internal placeholder', async () => {

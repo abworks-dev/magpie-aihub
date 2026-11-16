@@ -1,0 +1,61 @@
+# 安装与首次验收
+
+## 安装固定版本
+
+在已经登录的 Magpie 插件管理页添加 Git 来源：
+
+```text
+github:abworks-dev/magpie-aihub#v0.1.1
+```
+
+仓库公开，不需要你向插件提供 GitHub Token。服务器必须能访问 GitHub 及 Magpie 所需的插件运行时。已有插件可更新或改为指定版本；不需要升级整个 Magpie、改反向代理、开放端口或重启所有服务。
+
+安装后应看到插件“AIHub 自动路由”、上游 `AIHub Auto` / `aihub-auto` 及插件配置页。官方 Windows CLI 0.1.3250 已确认能加载；其他平台及生产实例仍需验证。
+
+如果你自己在运行 Magpie 的同一账户、同一配置环境执行 CLI，可以使用：
+
+```sh
+magpie plugin add github:abworks-dev/magpie-aihub#v0.1.1
+magpie plugin login aihub-auto 1
+magpie plugin --json
+```
+
+这不是让运维 Agent 绕过文件权限：容器场景中，宿主机另一用户的 CLI 不等于容器内实例。优先使用你现有的官方管理页。不要把 Key、密码、认证 JSON 或完整诊断输出发到公开 issue 或聊天中。
+
+## 先使用手工分组 Key
+
+1. 在 AIHub 控制台准备两把固定 OpenAI 分组、已设置有限额度的测试 Key；关闭这些 Key 的自动改组，避免多套工具争用。
+2. 在插件配置页填写准确的模型 ID、实际倍率上限与协议，暂不开启自动建 Key；手工模式保持“仅检测通过”关闭。
+3. 在 `AIHub Auto` 的连接界面选择“导入分组 Key”，私下填写 [README](../README.md#1-手工导入分组-key推荐首次验收) 的 JSON 格式。`multiplier` 是你的实际账号倍率；所有示例 Key 都是假值。
+4. 成功后核对模型列表。每模型 `responses` 对应 OpenAI Responses，`chat` 对应 Chat Completions；客户端应发送完整历史。
+5. 若有明确的小额费用预算，再进行真实短对话、取消、工具调用与会话保持验收。首次响应前换组也可能产生上游重复费用。
+
+两种认证方式均由自定义表单完成，不应再索要一把额外的普通 API Key。如果出现多余的 Key 提示，核对插件是否已更新至 0.1.1 并重新打开连接界面。
+
+## 再考虑账户模式
+
+账户模式需要你私下输入 AIHub 邮箱和密码。登录不等于立即自动建 Key；`autoCreateKeys` 默认关闭，首次使用需明确配置模型 ID。
+
+启用后会创建本插件专用分组 Key，但当前没有验证过服务端建 Key 的额度参数。需要自行在 AIHub 控制台核额度；插件不会自动删除、改绑、清理其他 Key。删除插件不撤销远端 Key，详见 [自动化边界](automation.md)。
+
+## 失败时怎样定位
+
+| 现象 | 需要核对的非秘密信息 |
+| --- | --- |
+| Git 来源安装失败 | Magpie 版本、Git spec、脱敏错误、运行实例是否能访问 GitHub |
+| 插件页面或按钮 403/404 | 操作、HTTP 方法、路径与状态码；先排除反向代理精确白名单，不直接开放所有 API |
+| 插件存在但没有模型 | 是否完成认证；模型 ID/协议配置；账户模式是否尚无已建 Key |
+| 没有可用分组 | 实际倍率、允许/排除名单、模型精确 ID、手工模式是否误开检测要求 |
+| 登录需要验证码/2FA | 改用手工 Key；不在公开记录中提交账户凭据 |
+
+不要提供带登录 query、Authorization、Cookie 或完整请求 body 的截图/网络导出。安装、页面展示、模型列表和真实计费请求是不同的验收步骤，前一步通过不代表后一步已完成。
+
+## 隔离宿主复验（开发者）
+
+使用官方固定版本 `v0.1.3250` 的 Windows amd64 CLI，放在本仓库忽略的 `.local-validation` 目录，在可执行文件旁创建 `.portable`，然后运行：
+
+```powershell
+./test/magpie-host-smoke.ps1
+```
+
+脚本先核对官方 SHA256，再设置隔离 HOME/config/cache，禁用账户发现，使用纯合成凭据验证插件加载、认证和每模型 SDK。它会修改该测试目录内的便携配置，不能在现有真实 Magpie 安装旁执行；不发送推理或 AIHub 账户登录。CI 自动下载固定 CLI 后执行同一脚本。浏览器页面、Go 网关请求链和真实 AIHub 行为仍需另外验收。

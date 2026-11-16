@@ -2,19 +2,19 @@
 
 面向 **aihub.top 普通消费者** 的 Magpie Provider 插件。用自己的账户或分组 Key，在 Magpie 中提供一个 `aihub-auto` 上游入口，按倍率和延迟选组、保留会话线路、在首次响应前有限重试。
 
-**状态：0.1.0 开发预览。** 独立实现，没有复制 aihub-auto 源码。离线测试与真实 Magpie/AIHub 验收分开记录；尚未使用真实账户联调。当前支持 AIHub **OpenAI 平台分组** 的 Responses / Chat Completions，不宣称原生 Claude/Gemini 全平台支持。
+**状态：0.1.1 开发预览，仓库公开。** 独立实现，没有复制 aihub-auto 源码。已用官方 Magpie 0.1.3250 隔离验证插件加载、合成凭据登录与两种模型 SDK 注册；尚未在生产主机安装或使用真实 AIHub 账户联调。当前支持 AIHub **OpenAI 平台分组** 的 Responses / Chat Completions，不宣称原生 Claude/Gemini 全平台支持。
 
 ## 安装
 
 在 Magpie 插件页从 Git 安装：
 
 ```text
-github:abworks-dev/magpie-aihub#main
+github:abworks-dev/magpie-aihub#v0.1.1
 ```
 
-私有仓库要求 **运行 Magpie 的主机**具备 GitHub 读取权限；你浏览器登录 GitHub 不代表服务器能读取。也可将完整仓库放到 Magpie 容器/主机可读路径，使用 Magpie 的本地插件安装方式。无需编译，不启动额外监听端口，不依赖独立代理服务。固定 commit 比跟随 main 更适合稳定使用。
+公开仓库无需 GitHub 私有仓库权限；运行 Magpie 的主机仍需能够访问 GitHub。也可将完整仓库放到 Magpie 容器/主机可读路径，使用本地插件安装方式。无需编译，不启动额外监听端口，不依赖独立代理服务。建议固定版本或 commit。详细步骤及失败时需要的脱敏信息见[安装与首次验收](documentation/installation.md)。
 
-本项目以当前 [Magpie 插件文档](https://usemagpie.ai/docs/zh/plugins) 的接口为目标，使用密码提示、API authorize、provider.models 和插件页面桥接。没有声称某个历史 Magpie 版本已经验收；安装后先验证认证和模型列表。
+本项目使用 [Magpie 插件接口](https://usemagpie.ai/docs/zh/plugins) 的密码提示、keyless API authorize、provider.models 和插件页面桥接。固定版本的真实宿主检查与尚未验证项见[验证记录](documentation/tests.md)；安装到你的实例后仍需核对页面、认证和模型列表。
 
 ## 两种接入方式
 
@@ -94,7 +94,7 @@ npm pack --dry-run
 
 源码为无依赖 ESM，测试使用 Node >=22 内置测试器；运行环境为 Magpie 的 Bun 插件宿主。CI 同时检查 Node 与 Bun。没有下载后自动执行的安装脚本。
 
-验收顺序：先导入两把已限额的测试 Key → 核对模型列表和协议 → 少量真实对话 → 检查会话保持和失败场景 → 再考虑账户自动建 Key。真实模型测试会产生费用，本仓库测试全部使用模拟 fetch。
+验收顺序：先导入两把已限额的测试 Key → 核对模型列表和协议 → 少量真实对话 → 检查会话保持和失败场景 → 再考虑账户自动建 Key。真实模型测试会产生费用；单元测试使用模拟 fetch，官方宿主检查仅使用不会发起推理的合成 Key。
 
 [架构与边界](documentation/architecture.md) · [认证/请求流程](documentation/flows.md) · [权限](documentation/permissions.md) · [配置与秘密](documentation/variables.md) · [自动化](documentation/automation.md) · [验证记录](documentation/tests.md)
 
