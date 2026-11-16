@@ -52,6 +52,19 @@ magpie plugin --json
 
 Cloud 目前只批准四个静态资源，**没有批准 service 新路由**；不能将静态页可打开或 Edge 合成代理通过解释为生产监控可用。遇 403/404 应记录精确方法/路径/状态，交由有权主体处理，不扩大整个 API 白名单或绕过 opc-agent 私有路径拒绝。
 
+若部署在自带反向代理的入口后面（例如 `magpie.abworks.cn` 由 Caddy 指向 `magpie web`），代理只放行插件静态文件时，监控标签会导航到 `/_magpie/plugin/<32 位 token>/_magpie/service/` 并被代理的兜底 404 截断。需要让代理把该前缀整体转发给同一个 `magpie web` 上游（保持路径与查询不变，不剥离前缀，建议关闭缓冲以便将来 SSE）：
+
+```caddyfile
+@magpie_plugin_service path_regexp svc ^/_magpie/plugin/[0-9a-f]{32}/_magpie/service(?:/.*)?$
+handle @magpie_plugin_service {
+    reverse_proxy 127.0.0.1:<magpie-web-port> {
+        flush_interval -1
+    }
+}
+```
+
+`/_magpie/service/` 与 `/_magpie/plugin/<token>/_magpie/service/` 都应命中同一条规则；改完后用 `curl -sS -o /dev/null -w "%{http_code}\n"` 核对无效 token 返回 Magpie 自己的 `404 page not found`（而不是代理的 HTML/纯文本 404），再用真实插件页点「监控」。
+
 监控不发推理探测、不建 Key；GET 快照可能触发远端目录 GET 与管理令牌刷新/保存。只展示脱敏白名单字段，缺失指标 null；不是持久审计或六平台健康保证。
 
 ## 失败时怎样定位

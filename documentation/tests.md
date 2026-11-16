@@ -14,6 +14,8 @@
 
 `/snapshot` 与页面的服务端断言、图片与 vm 覆盖见下一节；两项 Edge 合成代理回归仍保留在 CI。
 
+生产入口 Caddy 探测（2026-11-17 03:15 +08，未登录、只发 GET）：`/_magpie/plugin/<32hex>/{index.html,app.js,style.css,_magpie/bridge.js}` 转发到 Magpie（无效 token 返回 Magpie 自己的 `404 page not found`），而同一前缀下的 `_magpie/service/`、`_magpie/service/snapshot`、`favicon.ico` 与其他路径返回 Caddy 兜底 `404 Not exposed by this Magpie entry.`。因此从 `magpie.abworks.cn` 打开时，点「监控」会被入口 404 截断；这是入口未放行 service 路径，不是插件渲染错误，处理方式见[安装说明](installation.md#页面服务与-cloud-边界)。
+
 CI 于提交 `65e1869`（tag `v0.2.2`）的 [运行 43935911151](https://github.com/abworks-dev/magpie-aihub/actions/runs/43935911151) 中 `node`、`bun`、`magpie-host` 三个任务均通过；本机未安装 Bun，Bun 路径只由 CI 证明。
 
 ## v0.2.1 单页监控、页面服务与 Key 错误
