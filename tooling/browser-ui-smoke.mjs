@@ -70,7 +70,7 @@ let timer;
 try {
   const report = await Promise.race([result, new Promise(resolve => { timer = setTimeout(() => resolve({error: 'Browser fixture timed out'}), 20000); })]);
   console.log(JSON.stringify(report));
-  if (report.saves !== 1 || report.last?.multiplier !== 0.15 || report.last?.models !== 1 || report.disabled || !report.text?.includes('设置已保存')) process.exitCode = 1;
+  if (report.saves !== 1 || report.last?.multiplier !== 0.15 || report.last?.models !== 1 || report.disabled || !report.text?.includes('已保存')) process.exitCode = 1;
 } finally {
   clearTimeout(timer);
   if (child.pid) {

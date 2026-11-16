@@ -1,6 +1,6 @@
 # 自动化边界
 
-这里的自动化是确定性 Key 准备、六平台同平台同模型路由与可选只读监控，没有嵌入式代理、提示词驱动工具调用、邮件或定时作业。目录 / 模型缓存按使用惰性刷新，没有付费探测。v0.2.0 为预发布版本；已做 local mock、官方宿主隔离与 Edge 合成桥接验证，真实生产 / AIHub 账号联调未验证，公开平台代码核对不代表六平台实测。代码证据：[Account](../src/account.mjs)、[Router](../src/router.mjs)、[快照](../src/telemetry.mjs)、[监控](../src/monitor.mjs)。
+这里的自动化是确定性 Key 准备、六平台同平台同模型路由与只读页面监控，没有嵌入式代理、提示词驱动工具调用、邮件或定时作业。目录 / 模型缓存按使用惰性刷新，没有付费探测。v0.2.1 为预发布版本；已做 local mock、官方宿主隔离与 Edge 合成代理验证，真实生产 / AIHub 账号联调未验证，公开平台代码核对不代表六平台实测。代码证据：[Account](../src/account.mjs)、[Router](../src/router.mjs)、[快照](../src/telemetry.mjs)、[页面服务](../src/service.mjs)。
 
 ## 触发、所有者与输出
 
@@ -52,13 +52,13 @@
 | 终止当前请求 | 调用方 AbortSignal / 取消响应流；body reader 与等待响应取消；已发请求是否计费由远端决定 |
 | 限流 / 数量 | maxAttempts、poolSize、maxBodyBytes、maxSessions、实例数量上限 32；清单 maxConcurrency=8 依赖宿主执行，不是金额或全局 RPS 限制 |
 | 持久状态 | Magpie auth JSON 保存 tokens / keys / pending；不保存请求历史、目录快照或亲和 |
-| 审计 / 时间线 | 可选监控仅显示最近 100 条进程内路由记录，不是持久审计日志；pending 和远端 Key 名称可人工核对，不能替代完整创建审计 |
+| 审计 / 时间线 | 监控仅显示最近 100 条进程内路由记录，不是持久审计日志；pending 和远端 Key 名称可人工核对，不能替代完整创建审计 |
 | 未知创建结果 | 保留 pending，先在 AIHub 核查；未恢复到完整精确 Key 时不自动再次创建，不自动 DELETE 清理 |
 
-## 可选监控与 Key 错误
+## 页面服务与 Key 错误
 
-monitorEnabled 默认 false；monitorPort=19871 仅是未生产分配的默认候选。page.service 提供 loopback 页面和 GET /snapshot，静态设置页通过 bridge.service 导航；请求需随机内存 token、精确 Host、受限 Origin 与方法。监控可读取远端目录，并可能刷新/保存管理令牌，不推理探测、不创建 Key。快照字段白名单与脱敏后才返回；缺失或未就绪指标 null。Cloud 仅批准四个静态资源，未批准 service 新路由，opc-agent 生产私有路径拒绝不能绕过。
+设置与监控是同一份页面，由 page.service 在 127.0.0.1 提供；`monitorPort=19871` 是未生产分配的默认候选。`magpie web` 把服务代理到插件页面路径下，桌面版不代理、页面提示在本机打开回环地址。服务仅接受 GET/HEAD，要求精确 Host、Origin 缺省或 `null`、无 body；`/snapshot` 另需服务注入页面的进程级 token，响应 `Access-Control-Allow-Origin: null`。监控可读取远端目录，并可能刷新/保存管理令牌，不推理探测、不创建 Key。快照字段白名单与脱敏后才返回；缺失或未就绪指标 null。Cloud 仅批准四个静态资源，未批准 service 新路由，opc-agent 生产私有路径拒绝不能绕过。
 
-Key 准备错误使用稳定 code：`key_not_imported`、`key_pool_full`、`key_creation_pending`、`key_duplicate`、`key_creation_disabled`、`key_creation_incomplete`；管理状态映射为 `key_sign_in_required` / `key_access_denied` / `key_rate_limited`，其余为 `key_preparation_failed`。这些失败停止当前请求，不公开原始响应，不通过换组或盲目重建掩盖未知创建结果。见 [错误](../src/errors.mjs)、[Key 准备](../src/account.mjs)、[监控](../src/monitor.mjs)。
+Key 准备错误使用稳定 code：`key_not_imported`、`key_pool_full`、`key_creation_pending`、`key_duplicate`、`key_creation_disabled`、`key_creation_incomplete`；管理状态映射为 `key_sign_in_required` / `key_access_denied` / `key_rate_limited`，其余为 `key_preparation_failed`。这些失败停止当前请求，不公开原始响应，不通过换组或盲目重建掩盖未知创建结果。见 [错误](../src/errors.mjs)、[Key 准备](../src/account.mjs)、[页面服务](../src/service.mjs)。
 
 相关：[流程](flows.md)、[权限](permissions.md)、[配置与凭据](variables.md)、[测试覆盖映射](tests.md)。

@@ -1,6 +1,6 @@
 # 权限与副作用流程
 
-v0.2.0 预发布版本的代码阅读映射。已有 local mock 和 Edge 合成桥接验证；未做真实生产 / 账号联调，六平台外部接口仅按公开代码核对，不能当作六平台实测。静态访问规则见 [权限](permissions.md)，参数见 [配置与凭据](variables.md)。
+v0.2.1 预发布版本的代码阅读映射。已有 local mock 和 Edge 合成代理验证；未做真实生产 / 账号联调，六平台外部接口仅按公开代码核对，不能当作六平台实测。静态访问规则见 [权限](permissions.md)，参数见 [配置与凭据](variables.md)。
 
 ## 1. 保存路由选项
 
@@ -73,10 +73,12 @@ Key 准备失败立即停止当前路由，返回 error.type=aihub_routing_error
 
 证据：[Router.fetch / boundedBody](../src/router.mjs)。亲和哈希包含路径 / 平台 / 模型 / 会话值，限本进程；重载丢失，不能恢复上游 response ID，没有跨进程锁或共享状态承诺。
 
-## 6. 可选只读监控
+## 6. 页面服务与只读监控
 
-monitorEnabled 默认 false，monitorPort=19871 仅为默认候选，尚未生产分配。静态设置页 → bridge.service 导航 → 可选 page.service loopback 页面 → GET /snapshot；要求精确 Host、受限 Origin / 方法与随机内存 token。Cloud 仅批准四个静态资源，未批准 service 新路由；opc-agent 生产私有路径拒绝不可绕过。
+设置与监控共用一份页面。Magpie 的静态页只能经 bridge；监控标签在 `magpie web` 下导航到 page.service 代理路径（或直接由该服务提供同一文档），桌面版不代理，页面提示在本机打开 `http://127.0.0.1:<monitorPort>`。`monitorPort=19871` 仅为默认候选，尚未生产分配。
+
+服务只监听 127.0.0.1，仅接受 GET/HEAD，要求精确 Host、Origin 缺省或 `null`、无 body；`/snapshot` 还需要服务注入页面的进程级 token，并以 `Access-Control-Allow-Origin: null` 允许不透明来源的沙箱页面读取。Cloud 仅批准四个静态资源，未批准 service 新路由；opc-agent 生产私有路径拒绝不可绕过。
 
 快照读取最多 32 个内存运行时，读取目录可触发远端 GET、令牌刷新与保存；不调用 keyFor 或任何推理。返回白名单分组状态/筛选原因、指标、目录新鲜度、Key 计数与最近 100 条路由，缺失指标 null；不返回认证、Key、Cookie、body 或原始 session。进程退出即失去记录，不是持久审计。
 
-证据：[快照](../src/telemetry.mjs)、[服务](../src/monitor.mjs)、[入口](../index.mjs)、[页面](../ui/app.js)。相关验证状态见 [测试覆盖映射](tests.md)。
+证据：[快照](../src/telemetry.mjs)、[页面服务](../src/service.mjs)、[入口](../index.mjs)、[页面](../ui/app.js)。相关验证状态见 [测试覆盖映射](tests.md)。

@@ -2,15 +2,29 @@ import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
-const VIEW_TOKEN = randomBytes(32).toString('hex');
-const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src data:; form-action 'none'; base-uri 'none'";
+// The plugin page is served by this loopback service, so the settings and the
+// read-only monitor live in one document. In `magpie web` the host proxies the
+// service under the page's token, which is how a browser on another computer
+// reaches it without opening any port of its own.
+const CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; form-action 'none'; base-uri 'none'";
 const ASSETS = new Map([
-  ['/', ['monitor.html', 'text/html; charset=utf-8']],
-  ['/index.html', ['monitor.html', 'text/html; charset=utf-8']],
-  ['/monitor.html', ['monitor.html', 'text/html; charset=utf-8']],
-  ['/monitor.js', ['monitor.js', 'text/javascript; charset=utf-8']],
-  ['/monitor.css', ['monitor.css', 'text/css; charset=utf-8']],
+  ['/', ['index.html', 'text/html; charset=utf-8']],
+  ['/index.html', ['index.html', 'text/html; charset=utf-8']],
+  ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+  ['/style.css', ['style.css', 'text/css; charset=utf-8']],
 ]);
+// Magpie serves the bridge beside the page (`_magpie/bridge.js`). A document
+// served by this service sits one level deeper (`_magpie/service/`), so the
+// same bridge file is one directory up.
+const BRIDGE_SHELL = 'src="_magpie/bridge.js"';
+const BRIDGE_SERVICE = 'src="../bridge.js"';
+// Magpie serves the page inside `sandbox="allow-scripts"`, so its origin is
+// opaque and a snapshot read is cross-origin with `Origin: null`. The token is
+// injected only into the document this service serves, never into Magpie's
+// static copy, so another sandboxed frame cannot ask for the snapshot.
+const VIEW_TOKEN = randomBytes(32).toString('hex');
+const TOKEN_PLACEHOLDER = '__AIHUB_SERVICE_TOKEN__';
+const TOKEN_HEADER = 'x-aihub-service-token';
 const MAX_BYTES = 1024 * 1024;
 const list = (value, limit) => Array.isArray(value) ? value.slice(0, limit) : [];
 const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
@@ -31,7 +45,7 @@ const timestamp = value => {
 };
 
 // The supplier is sanitized independently: never serialize source objects or errors.
-function snapshotView(raw) {
+export function snapshotView(raw) {
   if (!raw || raw.schemaVersion !== 1 || !Array.isArray(raw.accounts)) throw new Error('INVALID_SNAPSHOT');
   let groupsLeft = 500;
   let modelsLeft = 4000;
@@ -74,18 +88,16 @@ function snapshotView(raw) {
   return json;
 }
 
-function sameToken(provided, expected) {
-  if (typeof provided !== 'string' || provided.length > 256) return false;
-  const a = Buffer.from(provided);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
 /** Root paths are supplied by Magpie's service proxy; this is not an AIHub proxy. */
-export function monitorHandler({ port, getSnapshot, token = VIEW_TOKEN } = {}) {
+export function serviceHandler({ port, getSnapshot, token = VIEW_TOKEN } = {}) {
   if (typeof getSnapshot !== 'function') throw new TypeError('getSnapshot must be a function');
-  if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(token)) throw new TypeError('Invalid monitor token');
-  if (!Number.isInteger(port) || port < 0 || port > 65535) throw new TypeError('Invalid monitor port');
+  if (!Number.isInteger(port) || port < 0 || port > 65535) throw new TypeError('Invalid service port');
+  if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(token)) throw new TypeError('Invalid service token');
+  const sameToken = provided => {
+    if (typeof provided !== 'string' || provided.length > 256) return false;
+    const a = Buffer.from(provided), b = Buffer.from(token);
+    return a.length === b.length && timingSafeEqual(a, b);
+  };
   return async (req, res) => {
     const send = (status, body, type = 'application/json; charset=utf-8', headers = {}) => {
       res.writeHead(status, {
@@ -97,44 +109,50 @@ export function monitorHandler({ port, getSnapshot, token = VIEW_TOKEN } = {}) {
     const error = (status, errorCode, message, headers) => send(status, JSON.stringify({ schemaVersion: 1, error: { code: errorCode, message } }), undefined, headers);
     try {
       const actualPort = port || req.socket.localPort;
-      if (req.headers.host !== `127.0.0.1:${actualPort}`) return error(403, 'HOST_REJECTED', 'Monitor requires its exact loopback host.');
-      if (req.headers.origin !== undefined && req.headers.origin !== 'null') return error(403, 'ORIGIN_REJECTED', 'Monitor accepts only its sandboxed page.');
-      if (req.headers['transfer-encoding'] || (req.headers['content-length'] && req.headers['content-length'] !== '0')) return error(400, 'BODY_REJECTED', 'Monitor requests cannot contain a body.');
-      if (req.url === '/snapshot') {
+      // Magpie rewrites Host to the service's own address; a browser on the LAN
+      // (DNS rebinding) does not.
+      if (req.headers.host !== `127.0.0.1:${actualPort}`) return error(403, 'HOST_REJECTED', 'The service answers only its exact loopback host.');
+      // The page's sandboxed frame sends Origin: null. Unset means a same-origin
+      // navigation or a local client; anything else is another site asking.
+      if (req.headers.origin !== undefined && req.headers.origin !== 'null') return error(403, 'ORIGIN_REJECTED', 'The service answers only its own page.');
+      if (req.headers['transfer-encoding'] || (req.headers['content-length'] && req.headers['content-length'] !== '0')) return error(400, 'BODY_REJECTED', 'The service takes no request body.');
+      if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') return error(405, 'METHOD_REJECTED', 'The plugin page is read-only.', { Allow: 'GET, HEAD, OPTIONS' });
+      const path = req.url.split('?')[0];
+      if (path === '/snapshot') {
         const cors = { 'Access-Control-Allow-Origin': 'null', Vary: 'Origin' };
         if (req.method === 'OPTIONS') {
           const requested = req.headers['access-control-request-headers'];
-          if (req.headers['access-control-request-method'] !== 'GET' || typeof requested !== 'string' || requested.trim().toLowerCase() !== 'x-aihub-monitor')
-            return error(403, 'PREFLIGHT_REJECTED', 'Only GET with X-AIHub-Monitor is permitted.');
-          return send(204, '', undefined, { ...cors, 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Allow-Headers': 'X-AIHub-Monitor' });
+          if (req.headers['access-control-request-method'] !== 'GET' || typeof requested !== 'string' || requested.trim().toLowerCase() !== TOKEN_HEADER)
+            return error(403, 'PREFLIGHT_REJECTED', `Only GET with ${TOKEN_HEADER} is permitted.`);
+          return send(204, '', undefined, { ...cors, 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Allow-Headers': TOKEN_HEADER });
         }
-        if (req.method !== 'GET') return error(405, 'METHOD_REJECTED', 'Monitor is read-only.', { Allow: 'GET, OPTIONS' });
-        if (!sameToken(req.headers['x-aihub-monitor'], token)) return error(403, 'TOKEN_REJECTED', 'Reload the monitor page to obtain its view token.', cors);
+        if (req.method !== 'GET') return error(405, 'METHOD_REJECTED', 'The snapshot is read-only.', { ...cors, Allow: 'GET, OPTIONS' });
+        if (!sameToken(req.headers[TOKEN_HEADER])) return error(403, 'TOKEN_REJECTED', 'Reload the page to obtain its snapshot token.', cors);
         try {
           return send(200, snapshotView(await getSnapshot()), undefined, cors);
         } catch {
-          return error(503, 'SNAPSHOT_UNAVAILABLE', 'The local routing snapshot could not be read. Refresh or load the provider first, then retry. No model inference or key creation is performed.', cors);
+          return error(503, 'SNAPSHOT_UNAVAILABLE', 'The local routing snapshot could not be read. Reload the provider, then retry. No model inference or key creation is performed.', cors);
         }
       }
-      const asset = ASSETS.get(req.url);
-      if (!asset) return error(404, 'NOT_FOUND', 'Monitor route does not exist.');
-      if (req.method !== 'GET') return error(405, 'METHOD_REJECTED', 'Monitor assets support GET only.', { Allow: 'GET' });
+      const asset = ASSETS.get(path);
+      if (!asset) return error(404, 'NOT_FOUND', 'The plugin page has no such file.');
+      if (req.method === 'OPTIONS') return error(405, 'METHOD_REJECTED', 'Only the snapshot answers a preflight.', { Allow: 'GET, HEAD' });
       let body = await readFile(new URL(`../ui/${asset[0]}`, import.meta.url), 'utf8');
-      if (asset[0] === 'monitor.html') body = body.replace('__AIHUB_MONITOR_TOKEN__', token);
-      return send(200, body, asset[1]);
+      if (asset[0] === 'index.html') body = body.replace(BRIDGE_SHELL, BRIDGE_SERVICE).replace(TOKEN_PLACEHOLDER, token);
+      return send(200, req.method === 'HEAD' ? '' : body, asset[1]);
     } catch {
-      if (!res.headersSent) error(500, 'MONITOR_UNAVAILABLE', 'The local monitor is temporarily unavailable. Reload the page or restart the provider.');
+      if (!res.headersSent) error(500, 'SERVICE_UNAVAILABLE', 'The plugin page is temporarily unavailable. Reload it.');
       else res.end();
     }
   };
 }
 
-/** Start once per plugin factory, only when monitorEnabled is true. Port 0 supports local tests. */
-export async function startMonitor({ port, getSnapshot } = {}) {
-  const server = createServer(monitorHandler({ port, getSnapshot }));
+/** Start once per plugin factory: the page itself lives here. Port 0 supports local tests. */
+export async function startService({ port, getSnapshot, token } = {}) {
+  const server = createServer(serviceHandler({ port, getSnapshot, token }));
   await new Promise((resolve, reject) => {
     const failed = err => { server.removeListener('listening', ready); reject(err); };
-    const ready = () => { server.removeListener('error', failed); resolve(); };
+    const ready = () => { server.removeListener('listening', failed); resolve(); };
     server.once('error', failed);
     server.once('listening', ready);
     server.listen(port, '127.0.0.1');

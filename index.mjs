@@ -4,14 +4,20 @@ import { login } from './src/api.mjs';
 import { Account, accountSaver } from './src/account.mjs';
 import { Router } from './src/router.mjs';
 import { modelDescriptor, protocolBase, protocolNpm } from './src/platforms.mjs';
-import { startMonitor } from './src/monitor.mjs';
+import { startService } from './src/service.mjs';
 import { monitorSnapshot } from './src/telemetry.mjs';
 
 async function AIHubPlugin({ client }, initialOptions = {}) {
   const options = settings(initialOptions);
   const runtimes = new Map();
-  // One listener per plugin factory, never per account. The host may allocate a port.
-  if (options.monitorEnabled) await startMonitor({ port: options.monitorPort, getSnapshot: () => monitorSnapshot(runtimes, options) });
+  // One listener per plugin factory, never per account: it is the page itself
+  // (settings and the read-only monitor in one document). A busy port must not
+  // break the provider; Magpie then shows its own retry notice for the page.
+  try {
+    await startService({ port: options.monitorPort, getSnapshot: () => monitorSnapshot(runtimes, options) });
+  } catch (error) {
+    console.error(`[aihub-auto] page service on 127.0.0.1:${options.monitorPort} did not start: ${error?.code ?? error?.message ?? 'unknown error'}`);
+  }
   function runtime(auth, getCurrentAuth) {
     let data;
     try { data = JSON.parse(auth?.key); } catch { throw new Error('Sign in to AIHub Auto using the plugin authentication form'); }

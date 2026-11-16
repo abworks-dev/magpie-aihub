@@ -2,13 +2,13 @@
 
 ## 安装固定版本
 
-**v0.2.0 为预发布版本。** 在已登录的 Magpie 插件管理页添加以下固定 Git 来源：
+**v0.2.1 为预发布版本。** 在已登录的 Magpie 插件管理页添加以下固定 Git 来源：
 
 ```text
-github:abworks-dev/magpie-aihub#v0.2.0
+github:abworks-dev/magpie-aihub#v0.2.1
 ```
 
-仓库公开，不需向插件提供 GitHub Token。服务器必须能访问 GitHub 及 Magpie 插件运行时。推理路由无需编译或新增代理监听；可选监控默认关闭。已有验证限于 local mock、官方 CLI 隔离宿主和 Edge 合成桥接；真实生产联调未验证。六平台外部接口只经公开文档/公开代码核对，不等于真实六平台实测。
+仓库公开，不需向插件提供 GitHub Token。服务器必须能访问 GitHub 及 Magpie 插件运行时。推理路由无需编译或新增代理监听；页面服务随插件启动，设置与只读监控在同一页面。已有验证限于 local mock、官方 CLI 隔离宿主和 Edge 合成代理；真实生产联调未验证。六平台外部接口只经公开文档/公开代码核对，不等于真实六平台实测。
 
 ### 已安装旧版本时怎样更新
 
@@ -16,14 +16,14 @@ github:abworks-dev/magpie-aihub#v0.2.0
 
 已核对官方 0.1.3250 的 plugin.Add 实现：Git / npm 插件按实际包名识别，添加新 ref 会替换同包名旧条目，并保留 Options、启用状态和 Provider 偏好；该操作不删除认证存储。此结论适用于原条目也是本仓库 Git 安装的情况；本地路径条目需另核对，不能笼统保证自动合并。
 
-固定旧 tag 的条目只点“更新”可能仍获取同一旧 tag。升级时应确认来源为 #v0.2.0；安装会重载共享插件宿主，影响进行中的请求和进程内会话亲和。关闭旧插件页并重新打开，改一项非秘密设置、保存、再次打开核对保留。保存设置不要求先登录 AIHub；真实模型使用才需要自己的账户或分组 Key。
+固定旧 tag 的条目只点“更新”可能仍获取同一旧 tag。升级时应确认来源为 #v0.2.1；安装会重载共享插件宿主，影响进行中的请求和进程内会话亲和。关闭旧插件页并重新打开，改一项非秘密设置、保存、再次打开核对保留。保存设置不要求先登录 AIHub；真实模型使用才需要自己的账户或分组 Key。
 
 安装后应看到插件“AIHub 自动路由”、上游 AIHub Auto / aihub-auto 及配置页。官方 Windows CLI 0.1.3250 隔离验证通过加载、合成凭据、六平台 8 个模型及三种 SDK 注册；不能据此宣布目标生产实例已通过。
 
 若由用户自己在运行 Magpie 的同一账户、同一配置环境执行 CLI，可使用：
 
 ```sh
-magpie plugin add github:abworks-dev/magpie-aihub#v0.2.0
+magpie plugin add github:abworks-dev/magpie-aihub#v0.2.1
 magpie plugin login aihub-auto 1
 magpie plugin --json
 ```
@@ -44,13 +44,13 @@ magpie plugin --json
 
 账户模式需私下输入 AIHub 邮箱和密码，autoCreateKeys 默认 false。models 留空时从可用分组和大厅发现模型，不预先建 Key；上游页面点“重新获取模型”。原来保存过显式列表时先清空并保存。发现受平台与路由政策筛选，使用默认 API；Gemini 自动发现固定使用 Responses，原生 Gemini 需手工指定模型协议。
 
-启用 autoCreateKeys 后，业务请求可创建专用分组 Key；尚未验证建 Key 的远端额度参数。请自行核实额度，插件不删除、改绑或清理其他 Key。移除插件不撤销远端 Key。pending 与稳定错误码的处理见 [自动化](automation.md) 和 [README](../README.md#只读监控与密钥错误)。
+启用 autoCreateKeys 后，业务请求可创建专用分组 Key；尚未验证建 Key 的远端额度参数。请自行核实额度，插件不删除、改绑或清理其他 Key。移除插件不撤销远端 Key。pending 与稳定错误码的处理见 [自动化](automation.md) 和 [README](../README.md#页面只读监控与密钥错误)。
 
-## 可选监控与 Cloud 边界
+## 页面服务与 Cloud 边界
 
-monitorEnabled 默认 false。monitorPort=19871 是默认候选，**尚未生产分配或确认可用**；先核对目标主机端口与宿主服务桥接，再启用。page.service 提供 127.0.0.1 的可选只读页面 / GET 快照，静态设置页通过 bridge.service 导航，不应直接暴露未经核对的公网监听。
+设置与监控是同一个页面，由插件自己的 page.service 在 127.0.0.1 提供；`monitorPort=19871` 是默认候选，**尚未生产分配或确认可用**。先核对目标主机端口与宿主服务桥接。`magpie web` 会把服务代理到插件页面路径下，从其他机器经 Magpie 即可打开监控；桌面版 Magpie 不代理服务，页面会提示在本机访问 `http://127.0.0.1:<monitorPort>/`。不应直接暴露未经核对的公网监听。
 
-Cloud 目前只批准四个静态资源，**没有批准 service 新路由**；不能将静态页可打开或 Edge 合成桥接通过解释为生产监控可用。遇 403/404 应记录精确方法/路径/状态，交由有权主体处理，不扩大整个 API 白名单或绕过 opc-agent 私有路径拒绝。
+Cloud 目前只批准四个静态资源，**没有批准 service 新路由**；不能将静态页可打开或 Edge 合成代理通过解释为生产监控可用。遇 403/404 应记录精确方法/路径/状态，交由有权主体处理，不扩大整个 API 白名单或绕过 opc-agent 私有路径拒绝。
 
 监控不发推理探测、不建 Key；GET 快照可能触发远端目录 GET 与管理令牌刷新/保存。只展示脱敏白名单字段，缺失指标 null；不是持久审计或六平台健康保证。
 

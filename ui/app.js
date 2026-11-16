@@ -3,20 +3,12 @@
 
   const PROVIDER = 'aihub-auto';
   const platforms = ['openai', 'deepseek', 'zhipu', 'kimi', 'grok', 'gemini'];
-  let savedMonitorEnabled = false;
-  function modelIdentity(model) {
-    const row = typeof model === 'string' ? { id: model } : model;
-    const parts = row?.id?.split('::') ?? [];
-    const platform = row?.platform ?? (parts.length === 2 ? parts[0] : 'openai');
-    const modelId = parts.length === 2 ? parts[1] : parts[0];
-    if (parts.length > 2 || !platforms.includes(platform) || (parts.length === 2 && platform !== parts[0]) || !/^[\w./:@+-]{1,160}$/.test(modelId ?? '')) throw new Error('模型 ID 或平台前缀无效。');
-    return { id: platform === 'openai' ? modelId : `${platform}::${modelId}`, platform };
-  }
+  const platformLabel = { openai: 'OpenAI', deepseek: 'DeepSeek', zhipu: '智谱', kimi: 'Kimi', grok: 'Grok', gemini: 'Gemini' };
   const defaults = {
     strategy: 'balanced', maxMultiplier: 0.16, maxAttempts: 3, poolSize: 4,
     excludedGroups: [], allowedGroups: [], requirePassed: false,
-    autoCreateKeys: false, defaultApi: 'responses', models: [],
-    platforms: [...platforms], monitorEnabled: false, monitorPort: 19871,
+    autoCreateKeys: false, defaultApi: 'responses', models: [], monitorPort: 19871,
+    platforms: [...platforms],
   };
   // Preserve only recognized, valid nonsecret settings from the latest options.
   const advancedRanges = {
@@ -25,20 +17,27 @@
     cooldownMs: [10, 3600000], sessionTtlMs: [1000, 604800000],
     maxSessions: [1, 50000], maxBodyBytes: [1024, 50 * 1024 * 1024],
   };
+  const state = { bridge: null, connected: false, busy: false, dirty: false, view: 'settings', snapshot: null, filter: 'all', loading: false };
+
+  function modelIdentity(model) {
+    const row = typeof model === 'string' ? { id: model } : model;
+    const parts = row?.id?.split('::') ?? [];
+    const platform = row?.platform ?? (parts.length === 2 ? parts[0] : 'openai');
+    const modelId = parts.length === 2 ? parts[1] : parts[0];
+    if (parts.length > 2 || !platforms.includes(platform) || (parts.length === 2 && platform !== parts[0]) || !/^[\w./:@+-]{1,160}$/.test(modelId ?? '')) throw new Error('模型 ID 或平台前缀无效。');
+    return { id: platform === 'openai' ? modelId : `${platform}::${modelId}`, platform };
+  }
+
   const $ = id => document.getElementById(id);
-  const form = $('options-form');
-  const controls = $('controls');
-  const saveButton = $('save-button');
   const status = $('status');
+  const saveButton = $('save-button');
+  const controls = $('controls');
+  const form = $('options-form');
   const dirtyNote = $('dirty-note');
-  let bridge;
-  let connected = false;
-  let busy = false;
-  let lastSaveAttempt = 0;
 
   function message(text, kind = '') {
     status.textContent = text;
-    status.className = `status${kind ? ` ${kind}` : ''}`;
+    status.className = `status${kind ? ` status-${kind}` : ''}`;
     status.setAttribute('role', kind === 'error' ? 'alert' : 'status');
   }
 
@@ -75,7 +74,7 @@
     if (validInteger(raw.maxAttempts, 1, 5)) result.maxAttempts = raw.maxAttempts;
     if (validInteger(raw.poolSize, 1, 8)) result.poolSize = raw.poolSize;
     for (const key of ['excludedGroups', 'allowedGroups']) if (groupList(raw[key])) result[key] = [...new Set(raw[key])];
-    for (const key of ['requirePassed', 'autoCreateKeys', 'monitorEnabled']) if (typeof raw[key] === 'boolean') result[key] = raw[key];
+    for (const key of ['requirePassed', 'autoCreateKeys']) if (typeof raw[key] === 'boolean') result[key] = raw[key];
     if (['responses', 'chat'].includes(raw.defaultApi)) result.defaultApi = raw.defaultApi;
     for (const [key, [min, max]] of Object.entries(advancedRanges)) if (validInteger(raw[key], min, max)) result[key] = raw[key];
     if (Array.isArray(raw.platforms) && raw.platforms.length && raw.platforms.every(id => platforms.includes(id))) result.platforms = [...new Set(raw.platforms)];
@@ -88,9 +87,8 @@
     const options = safeOptions(raw);
     for (const key of ['strategy', 'maxMultiplier', 'maxAttempts', 'poolSize', 'defaultApi', 'monitorPort']) $(key).value = String(options[key]);
     for (const platform of platforms) $(`platform-${platform}`).checked = options.platforms.includes(platform);
-    savedMonitorEnabled = options.monitorEnabled;
     for (const key of ['excludedGroups', 'allowedGroups']) $(key).value = options[key].join(', ');
-    for (const key of ['requirePassed', 'autoCreateKeys', 'monitorEnabled']) $(key).checked = options[key];
+    for (const key of ['requirePassed', 'autoCreateKeys']) $(key).checked = options[key];
     $('models').value = options.models.map(model => {
       const { id } = modelIdentity(model);
       return model.api ? `${id}|${model.api}` : id;
@@ -100,7 +98,7 @@
   function invalid(id, text) {
     const field = $(id);
     field.setAttribute('aria-invalid', 'true');
-    field.focus();
+    if (typeof field.focus === 'function') field.focus();
     throw new Error(text);
   }
 
@@ -148,15 +146,14 @@
   }
 
   function readForm() {
-    form.querySelectorAll('[aria-invalid]').forEach(field => field.removeAttribute('aria-invalid'));
+    if (typeof form.querySelectorAll === 'function') form.querySelectorAll('[aria-invalid]').forEach(field => field.removeAttribute('aria-invalid'));
     if (!['economy', 'balanced', 'speed'].includes($('strategy').value)) invalid('strategy', '请选择有效的路由策略。');
     if (!['responses', 'chat'].includes($('defaultApi').value)) invalid('defaultApi', '请选择有效的默认 API。');
     const enabledPlatforms = platforms.filter(platform => $(`platform-${platform}`).checked);
     if (!enabledPlatforms.length) invalid('platform-openai', '请至少选择一个平台。');
     return {
       platforms: enabledPlatforms,
-      monitorEnabled: $('monitorEnabled').checked,
-      monitorPort: readNumber('monitorPort', '监控端口', 1024, 65535),
+      monitorPort: readNumber('monitorPort', '回环端口', 1024, 65535),
       strategy: $('strategy').value,
       maxMultiplier: readNumber('maxMultiplier', '最高倍率', 0, 100, false),
       maxAttempts: readNumber('maxAttempts', '最多尝试次数', 1, 5),
@@ -182,84 +179,271 @@
   }
 
   function setBusy(value) {
-    busy = value;
-    controls.disabled = value || !connected;
+    state.busy = value;
+    controls.disabled = value || !state.connected;
+    saveButton.disabled = value || !state.connected;
     saveButton.textContent = value ? '正在保存…' : '保存设置';
     form.setAttribute('aria-busy', String(value));
   }
 
+  function setDirty(value) {
+    state.dirty = value;
+    if (dirtyNote) dirtyNote.textContent = value ? '有未保存的更改。' : '设置只保存在此插件的非敏感选项里。';
+  }
+
+  // ---- views -------------------------------------------------------------
+
+  function showView(name) {
+    state.view = name;
+    for (const [tab, view] of [['settings', 'view-settings'], ['monitor', 'view-monitor']]) {
+      const isActive = tab === name;
+      const tabNode = $(`tab-${tab}`);
+      tabNode.className = `tab${isActive ? ' is-active' : ''}`;
+      tabNode.setAttribute('aria-selected', String(isActive));
+      $(view).hidden = !isActive;
+    }
+    if (name === 'monitor') openMonitor();
+  }
+
+  function serviceUrl() {
+    const raw = state.bridge?.service;
+    if (typeof raw !== 'string' || !raw) return '';
+    try {
+      const url = new URL(raw, globalThis.location?.href);
+      return ['http:', 'https:'].includes(url.protocol) ? url : null;
+    } catch { return null; }
+  }
+
+  function inServicePage() {
+    return /\/_magpie\/service\/?$/.test(globalThis.location?.pathname ?? '');
+  }
+
+  // Magpie sandboxes the page, so its origin is opaque and a snapshot read is a
+  // cross-origin request. The service injects this token into the document it
+  // serves; Magpie's static copy keeps the placeholder and never has it.
+  function serviceToken() {
+    const meta = typeof document.querySelector === 'function' ? document.querySelector('meta[name="aihub-service-token"]') : null;
+    const value = meta?.content ?? meta?.getAttribute?.('content') ?? '';
+    return /^[A-Za-z0-9_-]{1,128}$/.test(value) ? value : '';
+  }
+
+  function openMonitor() {
+    const service = serviceUrl();
+    // A readable snapshot token means this document came from the service
+    // itself (its loopback origin, directly or through Magpie's proxy); the
+    // static page Magpie serves has the placeholder and no connect-src.
+    const served = inServicePage() || Boolean(serviceToken());
+    if (service && !served) {
+      globalThis.location.replace(service.href);
+      return;
+    }
+    if (!served && !state.connected) {
+      renderMonitorHint(true);
+      return;
+    }
+    loadSnapshot();
+  }
+
+  function renderMonitorHint(local) {
+    const port = Number($('monitorPort')?.value) || 19871;
+    const text = local
+      ? `本机回环页：<a href="http://127.0.0.1:${port}/" target="_blank" rel="noreferrer">http://127.0.0.1:${port}/</a>（在运行 Magpie 的这台电脑上打开）。这个页面由 Magpie 提供，无法直接读取插件服务。`
+      : '当前宿主没有提供插件服务入口，监控需要较新版本的 Magpie，并在 magpie web 或插件页面中打开。';
+    $('monitor-summary').innerHTML = '';
+    $('monitor-filters').innerHTML = '';
+    $('monitor-body').innerHTML = `<p class="empty">${text}</p>`;
+  }
+
+  async function loadSnapshot() {
+    if (state.loading) return;
+    const token = serviceToken();
+    if (!token) { renderMonitorHint(true); return; }
+    state.loading = true;
+    $('monitor-refresh').disabled = true;
+    $('monitor-body').innerHTML = '<p class="empty">正在读取本机快照…</p>';
+    try {
+      const url = new URL('snapshot', globalThis.location.href);
+      const response = await bounded(fetch(url.href, { headers: { accept: 'application/json', 'x-aihub-service-token': token }, cache: 'no-store' }), '读取快照超时', 20000);
+      if (!response.ok) throw new Error(`快照接口返回 ${response.status}`);
+      state.snapshot = await response.json();
+      renderSnapshot();
+    } catch (error) {
+      state.snapshot = null;
+      $('monitor-updated').textContent = '';
+      $('monitor-summary').innerHTML = '';
+      $('monitor-filters').innerHTML = '';
+      $('monitor-body').innerHTML = `<p class="empty">读取快照失败：${escapeHtml(errorText(error))}</p>`;
+    } finally {
+      state.loading = false;
+      $('monitor-refresh').disabled = false;
+    }
+  }
+
+  // ---- monitor rendering -------------------------------------------------
+
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  const num = value => typeof value === 'number' && Number.isFinite(value) ? value : null;
+  function routeTone(outcome) {
+    if (outcome === 'ok' || outcome === 'success' || outcome === 'selected') return 'pill-ok';
+    return outcome ? 'pill-off' : 'pill-neutral';
+  }
+  const percent = value => num(value) === null ? '—' : `${(num(value) * 100).toFixed(1)}%`;
+  const decimal = (value, digits = 2) => num(value) === null ? '—' : num(value).toFixed(digits);
+  const clock = value => {
+    const ms = typeof value === 'number' ? value : typeof value === 'string' ? Date.parse(value) : NaN;
+    return Number.isFinite(ms) ? new Date(ms).toLocaleTimeString('zh-CN', { hour12: false }) : '—';
+  };
+
+  function accounts() {
+    return Array.isArray(state.snapshot?.accounts) ? state.snapshot.accounts : [];
+  }
+
+  function groups() {
+    return accounts().flatMap(account => (account.groups ?? []).map(group => ({ ...group, account: account.label, stale: account.stale })));
+  }
+
+  function visibleGroups() {
+    const rows = groups();
+    return state.filter === 'all' ? rows : rows.filter(row => row.platform === state.filter);
+  }
+
+  function renderSnapshot() {
+    const rows = groups();
+    const accountsList = accounts();
+    const routes = accountsList.flatMap(account => account.routes ?? []);
+    const eligible = rows.filter(row => row.eligible === true).length;
+    const stale = accountsList.some(account => account.stale);
+    const errorCode = accountsList.find(account => account.errorCode)?.errorCode ?? '';
+    $('monitor-updated').textContent = state.snapshot?.generatedAt ? `更新于 ${clock(state.snapshot.generatedAt)}` : '';
+
+    $('monitor-summary').innerHTML = [
+      ['账户', accountsList.length, errorCode ? `目录：${escapeHtml(errorCode)}` : stale ? '目录较旧' : '目录已刷新'],
+      ['分组', rows.length, '来自当前目录'],
+      ['可用分组', eligible, `${rows.length - eligible} 个被排除或不可用`],
+      ['路由记录', routes.length, '最近 100 条内存记录'],
+    ].map(([label, value, hint]) => `
+      <div class="kpi">
+        <span class="kpi-label">${label}</span>
+        <span class="kpi-value">${value}</span>
+        <span class="kpi-hint">${hint}</span>
+      </div>`).join('');
+
+    const counts = new Map();
+    for (const row of rows) counts.set(row.platform, (counts.get(row.platform) ?? 0) + 1);
+    const chips = [['all', '全部', rows.length], ...platforms.filter(p => counts.has(p)).map(p => [p, platformLabel[p], counts.get(p)])];
+    $('monitor-filters').innerHTML = chips.map(([key, label, count]) =>
+      `<button type="button" class="filter${state.filter === key ? ' is-active' : ''}" data-filter="${key}">${label}<span>${count}</span></button>`).join('');
+
+    const list = visibleGroups();
+    if (!accountsList.length) {
+      $('monitor-body').innerHTML = '<p class="empty">还没有登录的 AIHub 账户。先在 Magpie 里登录 aihub-auto，再回到这里刷新。</p>';
+      return;
+    }
+    if (!list.length) {
+      $('monitor-body').innerHTML = '<p class="empty">当前筛选条件下没有分组。</p>';
+      return;
+    }
+    const rowsHtml = list.sort((a, b) => Number(b.eligible === true) - Number(a.eligible === true) || (a.multiplier ?? 1e9) - (b.multiplier ?? 1e9)).map(row => {
+      const reasons = Array.isArray(row.reasons) ? row.reasons : [];
+      const stateLabel = row.eligible === true ? '可用' : row.passed === false ? '未通过' : '不可用';
+      const why = row.eligible === true || !reasons.length ? '' : `<span class="cell-sub">${escapeHtml(reasons.slice(0, 2).join(' · '))}</span>`;
+      const stateText = `<span class="pill ${row.eligible === true ? 'pill-ok' : 'pill-off'}">${stateLabel}</span>${why}`;
+      return `<tr class="${row.eligible === true ? '' : 'is-off'}">
+        <td><span class="cell-name">${escapeHtml(row.name || `分组 ${row.groupId ?? ''}`)}</span><span class="cell-sub">#${escapeHtml(row.groupId ?? '—')} · ${escapeHtml(row.account)}</span></td>
+        <td>${escapeHtml(platformLabel[row.platform] ?? row.platform ?? '—')}</td>
+        <td class="num">${row.multiplier === null || row.multiplier === undefined ? '—' : `×${decimal(row.multiplier, 3)}`}</td>
+        <td class="num">${percent(row.metrics?.successRate)}</td>
+        <td class="num">${percent(row.metrics?.cacheHitRate)}</td>
+        <td class="num">${decimal(row.metrics?.tps, 1)}</td>
+        <td class="num">${decimal(row.metrics?.realPrice, 4)}</td>
+        <td class="num">${Array.isArray(row.models) ? row.models.length : 0}</td>
+        <td>${stateText}</td>
+        <td class="num">${clock(row.lastUsedAt)}</td>
+      </tr>`;
+    }).join('');
+    const routeHtml = routes.length ? routes.slice(-8).reverse().map(route => `
+      <li><span class="mono">${clock(route.at)}</span><span>${escapeHtml(platformLabel[route.platform] ?? route.platform ?? '—')} · ${escapeHtml(route.model || '—')}</span><span class="cell-sub">#${escapeHtml(route.groupId ?? '—')}</span><span class="pill ${routeTone(route.outcome)}">${escapeHtml(route.outcome || '—')}</span></li>`).join('') : '';
+    $('monitor-body').innerHTML = `
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>分组</th><th>平台</th><th class="num">倍率</th><th class="num">成功率</th><th class="num">缓存命中</th><th class="num">TPS</th><th class="num">真实价格</th><th class="num">模型</th><th>状态</th><th class="num">最后使用</th></tr></thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
+      <p class="note">指标缺失或未就绪时显示 —，不用 0 冒充；目录刷新只读 AIHub 接口，不跑推理、不建 Key。</p>
+      ${routeHtml ? `<div class="routes"><h3>最近路由</h3><ul>${routeHtml}</ul></div>` : ''}`;
+  }
+
+  // ---- wiring ------------------------------------------------------------
+
   form.addEventListener('input', event => {
     if (event.target && typeof event.target.removeAttribute === 'function') event.target.removeAttribute('aria-invalid');
-    dirtyNote.textContent = '有未保存的更改。';
+    setDirty(true);
   });
+  form.addEventListener('change', () => setDirty(true));
 
-  // Magpie's iframe disables native form submission; save directly from the button.
-  saveButton.addEventListener('click', async () => {
-    if (busy || !connected) return;
+  async function save() {
+    if (state.busy || !state.connected) return;
     let changes;
     try { changes = readForm(); }
     catch (error) { message(errorText(error), 'error'); return; }
-    if (Date.now() - lastSaveAttempt < 1100) { message('保存过于频繁，请稍等一秒后重试。', 'error'); return; }
     setBusy(true);
-    message('正在保存插件选项…');
+    message('正在保存…');
     try {
-      // Re-read to retain advanced settings changed since this page was opened.
-      const latest = safeOptions(optionsObject(await bounded(bridge.options.get(), '读取最新选项超时，尚未发起保存。')));
-      const next = { ...latest, ...changes, models: preserveModelLimits(changes.models, latest.models) };
-      lastSaveAttempt = Date.now();
-      await bounded(bridge.options.set(next), '保存响应超时，结果未知。请重新打开页面核实后再保存。', 15000);
-      dirtyNote.textContent = '设置已保存到此插件。';
-      message('设置已保存。宿主可能重载插件，会话亲和记忆随之重置。', 'success');
+      const previous = optionsObject(await bounded(state.bridge.options.get(), '读取插件选项超时'));
+      const previousModels = Array.isArray(previous.models) ? previous.models : [];
+      const options = { ...safeOptions(previous), ...changes };
+      options.models = preserveModelLimits(changes.models, previousModels);
+      await bounded(state.bridge.options.set(options), '保存插件选项超时');
+      setDirty(false);
+      message('已保存。宿主可能重载插件，重载后本页会自动刷新。', 'success');
     } catch (error) {
-      message(`保存未确认：${errorText(error)}`, 'error');
-      dirtyNote.textContent = '表单内容已保留；请核实保存状态后重试。';
-    } finally { setBusy(false); }
-  });
-
-  $('open-monitor').addEventListener('click', () => {
-    if (!connected || busy) return;
-    if (!savedMonitorEnabled) { message('请先开启监控并保存，然后重新打开插件页面。', 'error'); return; }
-    const service = bridge.service;
-    try {
-      const url = new URL(service, globalThis.location?.href);
-      if (typeof service !== 'string' || !service || !['http:', 'https:'].includes(url.protocol)) throw new Error();
-      globalThis.location.replace(url.href);
-    } catch { message('当前宿主没有提供有效的插件服务入口。请确认使用支持 page.service 的 Magpie，并在保存后重新打开页面。', 'error'); }
-  });
-
-  async function providerSummary() {
-    if (typeof bridge.read !== 'function') return;
-    try {
-      const result = await bounded(bridge.read('providers:list'), '供应商列表读取超时。');
-      const providers = Array.isArray(result) ? result : result?.providers;
-      if (!Array.isArray(providers)) return;
-      const provider = providers.find(item => item && item.id === PROVIDER);
-      $('provider-status').textContent = provider
-        ? `宿主已列出 ${typeof provider.name === 'string' ? provider.name : PROVIDER}（${PROVIDER}）。只读分组监控需开启后从上方入口访问。`
-        : `宿主列表暂未包含 ${PROVIDER}；请检查插件是否启用。只读分组监控需开启后从上方入口访问。`;
-    } catch {
-      $('provider-status').textContent = `暂时无法读取供应商列表，不影响选项保存。供应商 ID：${PROVIDER}；只读分组监控需开启后从上方入口访问。`;
+      message(`保存未确认：${errorText(error)} 可重试，或到 Magpie 的插件选项里检查。`, 'error');
+    } finally {
+      setBusy(false);
     }
   }
 
-  async function initialize() {
-    bridge = globalThis.magpie;
-    if (!bridge || !bridge.ready || typeof bridge.options?.get !== 'function' || typeof bridge.options?.set !== 'function') {
-      message('未找到 Magpie 桥接。请从 Magpie 的插件页面打开此面板；直接打开 HTML 无法读取或保存选项。', 'error');
+  saveButton.addEventListener('click', save);
+  $('tab-settings').addEventListener('click', () => showView('settings'));
+  $('tab-monitor').addEventListener('click', () => showView('monitor'));
+  $('monitor-refresh').addEventListener('click', () => loadSnapshot());
+  $('monitor-filters').addEventListener('click', event => {
+    const target = event.target?.closest?.('[data-filter]');
+    if (!target) return;
+    state.filter = target.getAttribute('data-filter') || 'all';
+    renderSnapshot();
+  });
+
+  async function connect() {
+    const bridge = globalThis.magpie;
+    if (!bridge || typeof bridge.options?.get !== 'function') {
+      // The loopback service has no bridge: settings stay with the Magpie page.
+      if (serviceToken()) message('已连接本机插件服务；修改设置请回到 Magpie 的插件页面。');
+      else message('未找到 Magpie 页面桥接，设置不可用；监控可在本机回环页查看。', 'error');
+      saveButton.disabled = true;
       return;
     }
+    state.bridge = bridge;
     try {
-      await bounded(bridge.ready, 'Magpie 桥接连接超时，请在宿主中重新打开页面。');
-      const raw = optionsObject(await bounded(bridge.options.get(), '读取插件选项超时，请重新打开页面。'));
-      populate(raw);
-      connected = true;
+      await bounded(bridge.ready, '连接 Magpie 超时');
+      const options = await bounded(bridge.options.get(), '读取插件选项超时');
+      populate(optionsObject(options));
+      state.connected = true;
       setBusy(false);
-      message('选项已载入，可编辑并保存。');
-      void providerSummary();
+      message('已连接 Magpie', 'success');
+      setDirty(false);
     } catch (error) {
-      message(`无法载入设置：${errorText(error)}`, 'error');
+      message(`初始化失败：${errorText(error)}`, 'error');
+      saveButton.disabled = true;
     }
   }
 
-  void initialize();
+  connect().then(() => {
+    // Deep link: /#monitor opens the read-only view without leaving the page.
+    if (globalThis.location?.hash === '#monitor') showView('monitor');
+  });
 })();

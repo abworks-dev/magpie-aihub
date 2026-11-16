@@ -1,6 +1,6 @@
 # 配置与凭据
 
-插件无环境变量配置入口，无外部依赖；由 Magpie options 和 auth API 配置。固定供应商 aihub-auto、origin https://aihub.top；Responses / Chat / models base 为 /v1，原生 Gemini 为 /v1beta。见 [配置](../src/config.mjs)、[平台](../src/platforms.mjs)、[清单](../package.json)。v0.2.0 为预发布版本，真实生产联调未验证；六平台接口仅按公开代码核对，现有验证为 local mock 与 Edge 合成桥接。
+插件无环境变量配置入口，无外部依赖；由 Magpie options 和 auth API 配置。固定供应商 aihub-auto、origin https://aihub.top；Responses / Chat / models base 为 /v1，原生 Gemini 为 /v1beta。见 [配置](../src/config.mjs)、[平台](../src/platforms.mjs)、[清单](../package.json)。v0.2.1 为预发布版本，真实生产联调未验证；六平台接口仅按公开代码核对，现有验证为 local mock 与 Edge 合成代理。
 
 ## 非敏感 options
 
@@ -19,8 +19,7 @@
 | autoCreateKeys | false；boolean | UI + Account | 主动开启才可 POST 创建；关闭不撤销已有 Key |
 | defaultApi | responses；responses / chat | UI + 入口 | 宿主默认适配协议，不转换请求语义；Gemini 不支持 chat，原生须逐模型选择 |
 | models | []；最多 200 项且公共 ID 唯一 | UI + 入口 | 字符串或 {id,platform?,api?,context?,output?}；原始 ID 1–160 个允许字符；非 OpenAI namespace 或显式 platform，二者须一致；api 为 responses / chat / gemini，Gemini 仅 responses / gemini，其余 responses / chat；context / output 正安全整数。显式配置优先，空列表发现，不证明推理可用 |
-| monitorEnabled | false；boolean | UI + 入口 / page.service | 可选本地只读监听；GET 可读取远端目录并刷新/保存令牌，不推理/建 Key |
-| monitorPort | 19871；整数 1024–65535 | UI + 入口 / page.service | 仅默认候选，尚未生产分配或确认可用；需核对宿主端口与服务桥接 |
+| monitorPort | 19871；整数 1024–65535 | UI + 入口 / page.service | 页面服务与只读监控的回环端口；仅默认候选，尚未生产分配或确认可用；需核对宿主端口与服务桥接 |
 | refreshMs | 60000；整数 10000–3600000ms | 服务端，UI 保留 | 目录 / 模型缓存新鲜期，惰性刷新，不是轮询 |
 | maxStaleMs | 600000；整数 10000–3600000ms | 服务端，UI 保留 | 刷新失败可用快照年龄，取消不回退，不保证状态有效 |
 | firstByteTimeoutMs | 30000；整数 10–120000ms | 服务端，UI 保留 | 单次推理首块等待，超时可同平台同模型换组 |
@@ -50,11 +49,11 @@
 | x-aihub-auto-session / prompt_cache_key | 宿主请求 → 会话哈希 | 亲和 TTL / 重载清理 | session 头不外传；prompt_cache_key 仍在 body |
 | x-aihub-auto-platform | 插件模型配置 → Router | 请求级 | 平台须与 namespace / 协议匹配，内部头不外传 |
 | magpie-aihub-internal | loader 的固定占位 apiKey | 无需轮换 | 不是真 Key，出站改用分组 Bearer / 原生 Gemini x-goog-api-key |
-| 监控 VIEW_TOKEN | 随进程随机生成，只用于受限 loopback 快照访问 | 重载重新生成，不写 options/auth | 不是 AIHub Key；不作为公网身份认证保证 |
+| 页面服务 VIEW_TOKEN | 随进程随机生成，经服务注入页面 meta，仅用于同源快照读取 | 重载重新生成，不写 options/auth | 不是 AIHub Key；不作为公网身份认证保证 |
 
 静态 [UI](../ui/app.js) 和 [页面](../ui/index.html) 无真实密钥，不读取 auth 或提交登录凭据；bridge 能读 options，不能把秘密放入 options。服务端拒绝未知名称并提示认证表单，不等于宿主有加密保证。
 
-监控快照只输出脱敏白名单字段；成功率/TPS/缓存/价格等缺失、未就绪指标 null，不用 0 冒充。目录错误为安全 code，不泄漏原始管理错误；Key 错误使用稳定 code，详见 [错误处理](automation.md#可选监控与-key-错误)。见 [快照](../src/telemetry.mjs)、[服务](../src/monitor.mjs)、[Key 错误](../src/errors.mjs)。
+监控快照只输出脱敏白名单字段；成功率/TPS/缓存/价格等缺失、未就绪指标 null，不用 0 冒充。目录错误为安全 code，不泄漏原始管理错误；Key 错误使用稳定 code，详见 [错误处理](automation.md#页面服务与-key-错误)。见 [快照](../src/telemetry.mjs)、[页面服务](../src/service.mjs)、[Key 错误](../src/errors.mjs)。
 
 ## 上线前核对
 
@@ -62,7 +61,7 @@
 - 以自己的账号核对六平台实际 API、协议、模型、权限与倍率；公开代码核对不等于真实调用，手工 multiplier 自行维护。
 - autoCreateKeys 保持关闭，或明确接受创建副作用；pending 先核对远端，不重新授权来掩盖未知结果。
 - 金额限制须在 AIHub 核实设置；倍率与池大小不是费用封顶，首块前重试可能重复计费。
-- monitor 默认关闭，19871 未生产分配。Cloud 仅批准四个静态资源，无 service 新路由授权；opc-agent 生产私有路径拒绝不可绕过。
-- 调用方发送完整历史，并接受重载丢失亲和；local mock / Edge 合成桥接只证明对应本地路径。
+- 页面服务与监控随插件启动，19871 未生产分配。Cloud 仅批准四个静态资源，无 service 新路由授权；opc-agent 生产私有路径拒绝不可绕过。
+- 调用方发送完整历史，并接受重载丢失亲和；local mock / Edge 合成代理只证明对应本地路径。
 
 相关：[架构](architecture.md)、[权限](permissions.md)、[自动化](automation.md)、[测试覆盖映射](tests.md)。

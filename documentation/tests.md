@@ -2,19 +2,17 @@
 
 ## 当前证据
 
-2026-11-17 01:14–01:18 +08，本地 Windows / Node 24.22.1 对 v0.2.0 执行 `node --test`：180 项测试通过，失败、取消、跳过均为 0（含嵌套计数）。路由与账号测试使用模拟 fetch、模拟宿主和内存流；监控测试启动真实回环 HTTP 服务并提供合成快照。不含真实凭据或付费模型调用。`npm pack --dry-run` 包含 26 个预期文件，未包含测试凭据或隔离宿主目录；语法与差异检查另行执行。
+2026-11-17 02:14–02:15 +08，本地 Windows / Node 24.22.1 对 v0.2.1 执行 `node --test`：182 项测试通过，失败、取消、跳过均为 0（含嵌套计数）。路由与账号测试使用模拟 fetch、模拟宿主和内存流；页面服务测试启动真实回环 HTTP 服务并提供合成快照。不含真实凭据或付费模型调用。`npm run check` 对入口、服务端模块与 UI 脚本逐个做语法检查，exit 0。`npm pack --dry-run` 包含 23 个预期文件、99.1 kB，未包含测试凭据或隔离宿主目录。
 
-GitHub Actions 在提交 `3277e4bab14f9b5c51456b96f7a1877daccd3767` 的[验证运行](https://github.com/abworks-dev/magpie-aihub/actions/runs/43859625988)中，Node 22 的语法、87 项测试与打包检查均通过；Bun 1.4.4 的 49 个顶层测试通过（与 Node 嵌套计数口径不同）。首轮 CI 发现 Bun 包装流式 Request 时源取消行为不同，已通过无覆盖参数时复用原 Request 修正并复验。本地未安装 Bun。本文件不是目标 Magpie 主机或 AIHub 线上验收报告。
+## v0.2.1 单页监控、页面服务与 Key 错误
 
-## v0.2.0 六平台、Key 错误与监控
+设置与监控合并为一份页面，由 page.service 在 127.0.0.1 提供，Magpie 的静态页只保留 bridge。测试覆盖：服务的精确 Host、Origin 缺省或 `null`、GET/HEAD-only、无 body、端口冲突与参数校验；`/snapshot` 的进程级 token（缺失/错误 403）、预检只放行 GET + 该头、`Access-Control-Allow-Origin: null`、响应体上限与端口占用拒绝；服务提供的 HTML 带 token 占位替换和 `../bridge.js` 重写，且不落盘。VM 测试覆盖设置页的六平台、模型限制与端口保存，监控标签在静态页跳转服务、在服务页同源读取快照、无 token 时不猜 URL、桌面版提示回环地址。
 
-六平台测试验证命名空间互不冲突，并在六组同名模型场景中断言故障转移始终保持同平台、同模型。Gemini 原生请求核对 `/v1beta` 路径、请求体和 Google Key 头；严格拒绝不支持的 query、平台和协议组合。入口回归覆盖默认 Chat 时 Gemini 自动发现仍使用 Responses。以上为合成接口行为验证，不证明线上每组实际支持这些协议。
+2026-11-17 01:40 +08 与本轮修改后，真实 Edge 经合成 Magpie service 代理加载合并页：`passed: true`、`rows: 1`、`filters: 2`、`kpis: 4`、`reads: 1`、`error: false`。同轮 Edge 设置页回归：`saves: 1`，成功状态为“已保存。”，控件恢复，exit 0。桥接与快照为合成对象，未登录用户实例；这不是生产 Cloud service 授权或真实 Magpie 浏览器代理验收。
+
+截图检查使用本机 Edge headless 1200×1500 对服务页 `/` 与 `/#monitor` 各拍一张，人工核对布局、表格、筛选与状态标签；视觉检查不替代真实数据与宿主主题验收。
 
 Key 错误测试验证稳定本地错误码不反射管理端响应，并覆盖创建结果不完整、同名重复、错误组、停用 Key 和重载后的 pending；未知创建不再次 POST。
-
-监控测试验证真实回环服务的 Host / Origin / 页面令牌约束、GET-only、字段白名单、匿名账号、缺失值 `null`、数组与响应体上限及端口冲突。遥测测试断言不调用建 Key 或推理；读取目录仍可能触发既有令牌刷新。2026-11-17 01:18 +08，真实 Edge 经合成 Magpie service 代理加载监控：`passed: true`、`rows: 1`、`tabs: 6`、`reads: 1`、`error: false`。这不是生产 Cloud service 授权或真实 Magpie 浏览器代理验收。
-
-同轮 Edge 设置页回归：`saves: 1`、`multiplier: 0.15`、模型数 1、成功状态及控件恢复通过。桥接为合成对象，未登录用户实例。
 
 ## 官方宿主隔离检查
 
@@ -24,21 +22,19 @@ Key 错误测试验证稳定本地错误码不反射管理端响应，并覆盖�
 
 2026-11-17 01:12–01:13 +08，使用同一固定官方 CLI、摘要和隔离环境，对 v0.2.0 复验通过：本地插件加载、合成分组 Key 登录、六个平台共 8 个模型注册，以及 `@ai-sdk/openai`、`@ai-sdk/openai-compatible`、`@ai-sdk/google` 三种 SDK 选择。检查不设置全局 loader baseURL，模型配置各自携带协议 URL。注册成功不证明实际 SDK 生成的推理请求端到端可用。
 
-可重复脚本为 [magpie-host-smoke.ps1](../test/magpie-host-smoke.ps1)。2026-11-17 01:23–01:25 +08，提交 `5795e41`（tag `v0.2.0`）的 [验证运行](https://github.com/abworks-dev/magpie-aihub/actions/runs/43917943251) 中 `node`、`bun`、`magpie-host` 三个任务均通过；`magpie-host` 在 Windows 上执行固定官方宿主、两个浏览器检查与上述八模型注册。旧提交的 CI 成功不能替代本版记录；后续提交须以各自 Actions 结果为准。所有隔离宿主检查均未发送推理或真实 AIHub 登录，不覆盖 Go 网关完整请求链、浏览器渲染或生产容器部署。
+可重复脚本为 [magpie-host-smoke.ps1](../test/magpie-host-smoke.ps1)。2026-11-17 01:23–01:25 +08，提交 `5795e41`（tag `v0.2.0`）的 [验证运行](https://github.com/abworks-dev/magpie-aihub/actions/runs/43917943251) 中 `node`、`bun`、`magpie-host` 三个任务均通过；`magpie-host` 在 Windows 上执行固定官方宿主、两个浏览器检查与上述八模型注册。旧提交的 CI 成功不能替代本版记录；后续提交须以各自 Actions 结果为准。v0.2.1 的宿主检查在发布前以同一脚本复验，结果随发布提交记录更新。所有隔离宿主检查均未发送推理或真实 AIHub 登录，不覆盖 Go 网关完整请求链、浏览器渲染或生产容器部署。
 
 ## 浏览器沙箱保存回归
 
 2026-11-16，用户在页面已打开后报告点击保存无反应。旧版的 VM 测试直接触发表单 submit 处理器，遗漏浏览器对沙箱表单的限制。用真实 Edge、独立临时用户目录、实际 UI 文件和模拟 bridge，在 `sandbox="allow-scripts"`、`form-action 'none'` 下复现：点击后保存调用0次，状态仍为“选项已载入”。
 
-0.1.2 移除原生 form 提交，改为普通按钮显式调用 options bridge；不放宽 iframe 或 CSP。[browser-ui-smoke.mjs](../tooling/browser-ui-smoke.mjs) 在本机回环临时端口加载隔离页面、实际点击按钮，断言恰好保存一次、输入值正确、出现成功状态且控件恢复；结束后关闭浏览器进程树和 HTTP 服务。测试不登录实际 Magpie，不调用 AIHub，不证明宿主 options 的真实持久化或完整视觉质量。21:15 +08 修复后本机 Edge 复验：`saves: 1`、`multiplier: 0.15`、模型数1、成功状态与控件恢复均通过，exit0；同一版本 Node 88项测试、语法与打包检查通过。Windows CI 执行同一浏览器回归。
+0.1.2 移除原生 form 提交，改为普通按钮显式调用 options bridge；不放宽 iframe 或 CSP。0.2.1 起页面没有原生 `form`，保存按钮为 `type=button`。[browser-ui-smoke.mjs](../tooling/browser-ui-smoke.mjs) 在本机回环临时端口加载隔离页面、实际点击按钮，断言恰好保存一次、输入值正确、出现成功状态且控件恢复；结束后关闭浏览器进程树和 HTTP 服务。测试不登录实际 Magpie，不调用 AIHub，不证明宿主 options 的真实持久化或完整视觉质量。
 
 ## 新账户模型发现与站点图标
 
 0.1.3 修复刚登录账户的认证包中 `keys: []` 导致旧发现逻辑永远返回空列表的问题。新逻辑读取账号可用分组、实际倍率与大厅模型卡片；仅在缺少卡片时使用已启用且合法的有限模型限制作为候选。所有候选继续应用倍率、允许/排除、平台、健康、检测与模型限制；可用的已有专用 Key 仅补充所属合格分组。没有证据时给出明确错误，与合法筛选后为空区分。
 
 新增 [discovery.test.mjs](../test/discovery.test.mjs) 与入口级 provider hook 回归：零 Key 新账户取得模型时仅发三个目录 GET，没有创建/枚举 Key 或推理请求；覆盖无效限制、失败卡片、缺少证据、目录失败、冷却、已有专用 Key 和手工模式。401 后既有认证刷新机制仍可能 POST refresh；不把刷新写操作称为纯 GET。
-
-2026-11-16 21:53–21:54 +08，本地 115 项测试、语法、打包、实际 Edge 沙箱保存与官方 0.1.3250 合成认证检查均通过。自动发现所得为目录声明，不是推理成功证明；开发者未访问用户账户，生产账户的实际返回仍需用户刷新确认。
 
 官方图像从 `https://aihub.top/favicon.ico` 返回的站点 HTML 的 PNG favicon 取得，而非将 HTML 当图像。20448 bytes、1182×1182，SHA256 `4ca27ef38578050dbf72af67769efd77fd3cba146916f60bcb6f1198b93793f0`。元数据与设置页内嵌同一 data URI，测试核对一致及摘要；[update-branding.mjs](../tooling/update-branding.mjs) 仅在图像仍匹配已审核摘要时更新。无需增加 Cloud 静态路径。宿主加载通过，生产 UI 的实际图标展示尚未确认。
 
@@ -61,7 +57,8 @@ Key 错误测试验证稳定本地错误码不反射管理端响应，并覆盖�
 | 插件导出、config / loader / models / chat.headers、keyless 声明 | [plugin.test.mjs](../test/plugin.test.mjs) | 模拟 hook；另用官方固定宿主核插件加载、表单认证与每模型 SDK，不覆盖完整推理 |
 | 六平台命名空间、平台内精确模型 failover、Gemini 原生协议 | [platforms.test.mjs](../test/platforms.test.mjs)、[plugin.test.mjs](../test/plugin.test.mjs) | 合成目录及出站请求断言；未进行六平台真实计费调用 |
 | 稳定 Key 错误码、管理响应脱敏、不完整创建和精确恢复 | [key-errors.test.mjs](../test/key-errors.test.mjs) | 模拟管理响应、重载和冲突，验证不重放创建 |
-| 监控 HTTP 访问约束、只读接口、白名单、缺失值与仪表盘 | [monitor.test.mjs](../test/monitor.test.mjs)、[telemetry.test.mjs](../test/telemetry.test.mjs)、[browser-monitor-smoke.mjs](../tooling/browser-monitor-smoke.mjs) | 真实回环服务 + VM + Edge 合成 service 代理；不覆盖生产 Cloud 路由 |
+| 页面服务访问约束、token / CORS、只读快照、端口冲突 | [service.test.mjs](../test/service.test.mjs)、[telemetry.test.mjs](../test/telemetry.test.mjs) | 真实回环 HTTP + 合成快照；不覆盖生产 Cloud 路由或 Magpie 真实代理 |
+| 合并页导航、同源快照渲染、六平台设置保存 | [ui.test.mjs](../test/ui.test.mjs)、[browser-monitor-smoke.mjs](../tooling/browser-monitor-smoke.mjs)、[browser-ui-smoke.mjs](../tooling/browser-ui-smoke.mjs) | VM 加真实 Edge 合成代理；不替代生产页面与真实数据 |
 | 官方品牌图像一致与摘要 | [plugin.test.mjs](../test/plugin.test.mjs) | 比对元数据与页面图像；不代替生产渲染检查 |
 | UI 配置保存、保留高级配置、bridge 缺失 / 保存失败 | [ui.test.mjs](../test/ui.test.mjs)、[browser-ui-smoke.mjs](../tooling/browser-ui-smoke.mjs) | VM 验校验和反馈；真实 Edge 验沙箱内点击保存，bridge 为模拟；未做生产持久化与完整视觉验收 |
 
@@ -71,13 +68,16 @@ Key 错误测试验证稳定本地错误码不反射管理端响应，并覆盖�
 npm run check
 npm test
 npm pack --dry-run
+node tooling/browser-ui-smoke.mjs
+node tooling/browser-monitor-smoke.mjs
 ```
 
-没有外部测试依赖，不需要 `.env`、真实 Key、账号或联网模型。CI 的 Bun 任务执行 `bun test`。
+没有外部测试依赖，不需要 `.env`、真实 Key、账号或联网模型。CI 的 Bun 任务执行 `bun test`；Windows 任务另跑两个 Edge 回归与官方宿主检查。
 
 ## 尚未验证
 
 - 生产 Magpie 实例的安装、页面展示、浏览器密码提示和 UI bridge 保存；官方隔离 CLI 的识别 / 认证 / SDK 注册已经通过，不代表生产验收。实际会话 ID、完整 SDK 请求与 Go 网关链仍未验证。
+- 页面服务在生产宿主的端口占用、宿主 service 代理与 `magpie web` 的真实转发；本地回环代理检查只证明对应路径。
 - Magpie 多账号上下文及认证存储的加密、CAS、备份和重载行为。
 - AIHub 真实登录 / 验证码 / 2FA、管理接口字段、模型目录、专属倍率和 Key 创建 / 列表返回完整 Key 的能力。
 - 六平台的 Responses / Chat Completions、Gemini 原生协议的真实流、工具调用、长会话、取消与缓存行为。
@@ -87,7 +87,7 @@ npm pack --dry-run
 
 ## 后续真实验收顺序
 
-1. 在目标 Magpie 安装固定 commit，先核对插件页面与非敏感设置。
+1. 在目标 Magpie 安装固定 ref `#v0.2.1`，先核对插件页面、合并后的监控标签与非敏感设置。
 2. 导入两把已在 AIHub 设置有限额度、固定分组的测试 Key，关闭 `requirePassed`，填写准确倍率 / 模型。
 3. 分别验证所用平台的 Responses / Chat / Gemini 原生协议与完整历史请求。少量真实推理可能计费，应在用户授权的费用范围内执行。
 4. 核对会话保持、取消和受控故障。检查 AIHub 用量，不将模拟测试当作真实费用证明。

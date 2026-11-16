@@ -11,7 +11,10 @@ const defaults = {
   maxSessions: 5000, maxBodyBytes: 20 * 1024 * 1024,
   excludedGroups: [], allowedGroups: [], requirePassed: false,
   defaultApi: 'responses', models: [], autoCreateKeys: false,
-  platforms: [...PLATFORMS], monitorEnabled: false, monitorPort: 19871,
+  platforms: [...PLATFORMS], monitorPort: 19871,
+  // Deprecated: the page service is always on, so this stored option is accepted
+  // for older installs and otherwise ignored.
+  monitorEnabled: false,
 };
 
 export function settings(raw = {}) {

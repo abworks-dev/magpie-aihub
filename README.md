@@ -2,21 +2,21 @@
 
 面向 **aihub.top 普通消费者** 的 Magpie Provider 插件。用自己的账户或分组 Key，在 Magpie 中提供一个 `aihub-auto` 上游入口，按倍率和延迟选组、保留会话线路、在首次响应前有限重试。
 
-**版本：v0.2.0（预发布）。** 当前实现覆盖 `openai`、`deepseek`、`zhipu`、`kimi`、`grok`、`gemini` 六个平台；非 OpenAI 模型使用 `platform::model` 命名空间，仅在**同平台、同模型**的分组间 failover。Gemini 可显式选择 Responses 或原生 Gemini 协议，其他平台支持 Responses / Chat Completions。外部平台接口依据公开文档与公开代码核对，**不代表六平台真实调用均已实测**。
+**版本：v0.2.1（预发布）。** 当前实现覆盖 `openai`、`deepseek`、`zhipu`、`kimi`、`grok`、`gemini` 六个平台；非 OpenAI 模型使用 `platform::model` 命名空间，仅在**同平台、同模型**的分组间 failover。Gemini 可显式选择 Responses 或原生 Gemini 协议，其他平台支持 Responses / Chat Completions。外部平台接口依据公开文档与公开代码核对，**不代表六平台真实调用均已实测**。
 
-已通过 180 项本地测试、Edge 设置页与监控合成桥接验证；官方 Magpie 0.1.3250 隔离检查涵盖插件加载、合成凭据登录、六平台 8 个模型与三种 SDK 注册。真实生产实例联调、真实 AIHub 账户与计费推理仍未验证。独立 MIT 实现，不复制许可不明项目代码。图标取自 [AIHub 官方站点](https://aihub.top/) 公开页面的 PNG favicon，内嵌到元数据与页面；品牌图像权利归原站点。
+已通过 182 项本地测试、Edge 设置页与页面内监控合成代理验证；官方 Magpie 0.1.3250 隔离检查涵盖插件加载、合成凭据登录、六平台 8 个模型与三种 SDK 注册。真实生产实例联调、真实 AIHub 账户与计费推理仍未验证。独立 MIT 实现，不复制许可不明项目代码。图标取自 [AIHub 官方站点](https://aihub.top/) 公开页面的 PNG favicon，内嵌到元数据与页面；品牌图像权利归原站点。
 
 ## 安装
 
 在 Magpie 插件管理页添加以下固定版本：
 
 ```text
-github:abworks-dev/magpie-aihub#v0.2.0
+github:abworks-dev/magpie-aihub#v0.2.1
 ```
 
-也可使用经核对的 commit 或完整本地仓库。公开仓库无需 GitHub 私有仓库权限；运行 Magpie 的主机仍需能够访问 GitHub。无需编译；监控默认关闭，推理路由不依赖独立代理服务。详细步骤与限制见[安装与首次验收](documentation/installation.md)。
+也可使用经核对的 commit 或完整本地仓库。公开仓库无需 GitHub 私有仓库权限；运行 Magpie 的主机仍需能够访问 GitHub。无需编译；推理路由不依赖独立代理，页面与只读监控由插件自己的回环服务提供。详细步骤与限制见[安装与首次验收](documentation/installation.md)。
 
-本项目使用 [Magpie 插件接口](https://usemagpie.ai/docs/zh/plugins) 的密码提示、keyless API authorize、provider.models、静态页面 bridge 与可选 page.service。安装后仍需核对页面、认证和模型列表；[已有验证记录](documentation/tests.md)区分本版隔离检查与尚未完成的生产验收。
+本项目使用 [Magpie 插件接口](https://usemagpie.ai/docs/zh/plugins) 的密码提示、keyless API authorize、provider.models、静态页面 bridge 与 page.service。安装后仍需核对页面、认证和模型列表；[已有验证记录](documentation/tests.md)区分本版隔离检查与尚未完成的生产验收。
 
 ## 两种接入方式
 
@@ -84,17 +84,18 @@ github:abworks-dev/magpie-aihub#v0.2.0
 | `autoCreateKeys` | `false` | 允许账户模式按需创建 Key；关闭不撤销已有 Key |
 | `defaultApi` | `responses` | 默认协议；可设 `chat`，Gemini 自动发现仍使用 Responses；原生 Gemini 须显式配置 |
 | `models` | `[]` | 字符串 ID 或 `{id, platform?, api?, context?, output?}`；空列表自动发现 |
-| `monitorEnabled` | `false` | 开启可选本地只读监控服务 |
-| `monitorPort` | `19871` | 默认候选端口，**尚未在生产分配或确认可用** |
+| `monitorPort` | `19871` | 页面服务与监控的回环端口；默认候选，**尚未在生产分配或确认可用** |
 | `firstByteTimeoutMs` / `totalTimeoutMs` | `30000` / `90000` | 单次首字节期限 / 路由与首字节总预算；输出后不截断长流 |
 | `refreshMs` / `maxStaleMs` | `60000` / `600000` | 按需目录刷新间隔 / 故障时旧目录可用上限 |
 | `sessionTtlMs` | `86400000` | 内存会话保留时间 |
 
 发现模型时上下文/输出默认 128000/16384，真实能力可能不同；可显式配置。模型成本字段的未知占位 0 不表示免费；实际计费以 AIHub 为准。监控缺失指标使用 `null`，不伪装为零。
 
-## 只读监控与密钥错误
+## 页面、只读监控与密钥错误
 
-监控默认关闭。启用后，可选 `page.service` 在 `127.0.0.1` 提供页面与 GET 快照；静态设置页通过 `bridge.service` 导航。`monitorPort: 19871` 只是默认候选，须先核对目标主机端口和宿主服务桥接。Cloud 当前仅批准四个静态资源，未批准 service 新路由，不能据此声称生产监控已接通。
+设置和监控是**同一个页面**：Magpie 里打开的是静态设置页，它经 `bridge.service` 或监控标签跳到插件自己的回环服务（`127.0.0.1:<monitorPort>`），那里同时提供设置和只读监控。`magpie web` 会把该服务代理到插件页面路径下，所以从别的电脑经 Magpie 访问时不需要另开端口；桌面版 Magpie 不代理服务，页面会提示在本机打开 `http://127.0.0.1:19871/`。`monitorPort: 19871` 只是默认候选，须先核对目标主机端口和宿主服务桥接。
+
+服务只监听回环，仅接受 GET/HEAD，并要求精确 `Host`、`Origin` 缺省或为 `null`、无请求体；快照还需要服务注入到页面里的进程级令牌（`x-aihub-service-token`），因此别的站点或被沙箱化的第三方页面无法读取。Cloud 当前仅批准四个静态资源，未批准 service 新路由，不能据此声称生产监控已接通。
 
 快照展示分组可用性/筛选原因、倍率、可得的成功率/TPS/缓存命中率/价格、目录新鲜度、Key 数量及最近 100 条内存路由结果。缺失、未就绪或不可信的指标为 `null`。快照不返回原始认证包、Key、Cookie、请求/响应 body 或会话 ID。监控读取可按需发起远端目录 GET，并可能触发管理令牌刷新与保存；**不会推理探测或创建 Key**，也不是持久审计日志。
 
@@ -118,7 +119,7 @@ Key 准备失败返回稳定的 `error.code` 和脱敏信息，停止本次请�
 - 客户端需发送完整对话历史。`previous_response_id` 和服务端 `conversation` 状态续接会明确拒绝。
 - 远端固定 `https://aihub.top`：Responses / Chat Completions / models 使用 `/v1`；原生 Gemini 仅允许 `/v1beta/models/<model>:generateContent` 和 `:streamGenerateContent`，流式只接受可选 `alt=sse`。拒绝其他路径、query、重定向和自定义上游。
 - 请求头按白名单重建；Bearer 分组 Key 或原生 Gemini 的 `x-goog-api-key` 仅在服务端注入，不转发客户端 Cookie、Magpie API Key 或管理令牌。
-- 没有后台付费探测、外发遥测或自动计划任务；目录按需刷新，可选监控监听只提供只读视图。
+- 没有后台付费探测、外发遥测或自动计划任务；目录按需刷新，回环页面服务只提供只读视图。
 
 ## 开发与验证
 
@@ -128,9 +129,9 @@ npm run check
 npm pack --dry-run
 ```
 
-源码为无依赖 ESM，测试使用 Node >=22 内置测试器；运行环境为 Magpie 的 Bun 插件宿主。CI 同时检查 Node、Bun 与 Windows 上的官方宿主和两项浏览器回归，v0.2.0 提交 `5795e41` 的[三个任务](https://github.com/abworks-dev/magpie-aihub/actions/runs/43917943251)均通过。没有下载后自动执行的安装脚本。
+源码为无依赖 ESM，测试使用 Node >=22 内置测试器；运行环境为 Magpie 的 Bun 插件宿主。CI 同时检查 Node、Bun 与 Windows 上的官方宿主和两项浏览器回归；v0.2.0 提交 `5795e41` 的[三个任务](https://github.com/abworks-dev/magpie-aihub/actions/runs/43917943251)均通过，v0.2.1 的验证记录见[验证记录](documentation/tests.md)。没有下载后自动执行的安装脚本。
 
-验收顺序：先导入两把同平台同模型、已限额的测试 Key → 核对命名空间与协议 → 少量真实对话 → 检查会话保持和失败场景 → 再考虑账户自动建 Key。真实模型测试会产生费用；local mock 与 Edge 合成桥接不证明六平台真实接口、生产权限、费用或可用性。opc-agent 生产私有路径已被拒绝，不能通过其他路径或身份绕过。
+验收顺序：先导入两把同平台同模型、已限额的测试 Key → 核对命名空间与协议 → 少量真实对话 → 检查会话保持和失败场景 → 再考虑账户自动建 Key。真实模型测试会产生费用；local mock 与 Edge 合成代理不证明六平台真实接口、生产权限、费用或可用性。opc-agent 生产私有路径已被拒绝，不能通过其他路径或身份绕过。
 
 [架构与边界](documentation/architecture.md) · [认证/请求流程](documentation/flows.md) · [权限](documentation/permissions.md) · [配置与秘密](documentation/variables.md) · [自动化](documentation/automation.md) · [验证记录](documentation/tests.md)
 
