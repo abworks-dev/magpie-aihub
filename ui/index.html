@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AIHub 自动路由</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="_magpie/bridge.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="page-header">
+      <div class="brand-mark" aria-hidden="true">↗</div>
+      <div><p class="eyebrow">MAGPIE · 独立消费端插件</p><h1>AIHub 自动路由</h1><p class="subtitle">为每段对话选组，在成本与响应之间找到平衡。</p></div>
+      <span class="provider-tag">aihub-auto</span>
+    </header>
+    <div id="status" class="status" role="status" aria-live="polite">正在连接 Magpie…</div>
+    <noscript><p class="status error">请启用 JavaScript 并在 Magpie 中打开此页面。</p></noscript>
+    <form id="options-form" novalidate>
+      <fieldset id="controls" disabled>
+        <section class="card" aria-labelledby="routing-title">
+          <div class="section-heading"><span class="step">01</span><div><h2 id="routing-title">路由偏好</h2><p>控制候选组的选择与故障切换。</p></div></div>
+          <div class="grid">
+            <label class="field"><span>选择策略</span><select id="strategy" name="strategy"><option value="economy">经济 · 优先低倍率</option><option value="balanced" selected>均衡 · 成本与速度</option><option value="speed">速度 · 优先低延迟</option></select></label>
+            <label class="field"><span>最高倍率</span><input id="maxMultiplier" name="maxMultiplier" type="number" min="0" max="100" step="any" value="0.16" required aria-describedby="multiplier-help"><small id="multiplier-help">默认 0.16；0 仅允许免费组，并非不设上限。</small></label>
+            <label class="field"><span>最多尝试次数</span><input id="maxAttempts" name="maxAttempts" type="number" min="1" max="5" step="1" value="3" required><small>1–5 次，包含首次请求。</small></label>
+            <label class="field"><span>候选池大小</span><input id="poolSize" name="poolSize" type="number" min="1" max="8" step="1" value="4" required><small>保留 1–8 个候选组。</small></label>
+          </div>
+        </section>
+        <section class="card" aria-labelledby="groups-title">
+          <div class="section-heading"><span class="step">02</span><div><h2 id="groups-title">分组范围</h2><p>使用 AIHub 分组 ID，多个 ID 用英文逗号分隔。</p></div></div>
+          <div class="grid">
+            <label class="field"><span>排除分组</span><input id="excludedGroups" name="excludedGroups" type="text" placeholder="例如：12, 18" autocomplete="off" spellcheck="false"><small>填写正整数 ID，排除优先。</small></label>
+            <label class="field"><span>仅允许分组 <span class="optional">可选</span></span><input id="allowedGroups" name="allowedGroups" type="text" placeholder="留空表示不限制分组范围" autocomplete="off" spellcheck="false"><small>留空仍受最高倍率及其他筛选条件约束。</small></label>
+          </div>
+          <label class="toggle"><input id="requirePassed" name="requirePassed" type="checkbox"><span><strong>仅使用已通过检测的分组</strong><small>默认关闭；开启后按服务端提供的检测状态筛选。</small></span></label>
+          <div class="warning-panel">
+            <label class="toggle"><input id="autoCreateKeys" name="autoCreateKeys" type="checkbox" aria-describedby="keys-warning"><span><strong>允许自动创建专用 AIHub 密钥</strong><small>默认关闭，仅在你主动开启后允许创建。</small></span></label>
+            <p id="keys-warning">开启后，插件可以在你的 AIHub 账户中创建新的专用密钥。尚未验证服务端配额限制，不能据此保证费用上限；插件不会删除密钥。关闭此项也不会撤销已经创建的密钥。</p>
+          </div>
+        </section>
+        <section class="card" aria-labelledby="models-title">
+          <div class="section-heading"><span class="step">03</span><div><h2 id="models-title">模型与协议</h2><p>可自行指定模型，也可交由宿主发现。</p></div></div>
+          <label class="field api-field"><span>默认 API</span><select id="defaultApi" name="defaultApi"><option value="responses">OpenAI Responses</option><option value="chat">Chat Completions</option></select></label>
+          <label class="field model-field"><span>模型列表 <span class="optional">可选，每行一个</span></span><textarea id="models" name="models" rows="5" spellcheck="false" autocomplete="off" placeholder="model-id&#10;another-model|chat&#10;third-model|responses" aria-describedby="models-help"></textarea><small id="models-help">格式：modelID 或 modelID|responses / modelID|chat，最多 200 个。省略协议时使用默认 API。留空允许插件通过只读 /v1/models 发现模型；本页面不直接联网。</small></label>
+        </section>
+        <div class="save-row"><p id="dirty-note">设置仅保存在此插件的非敏感选项中。</p><button id="save-button" type="submit">保存设置</button></div>
+      </fieldset>
+    </form>
+    <aside class="footnote" aria-label="运行说明">
+      <p><strong>运行方式</strong> 会话亲和信息仅保存在插件进程内存中，宿主重载后重置；保存选项可能触发宿主重载。</p>
+      <p id="provider-status">供应商：aihub-auto。此桥接不提供实时供应商看板或分组监控。</p>
+      <p>本页不接收凭据，不提供登录，不发送远程分析数据。</p>
+    </aside>
+  </main>
+</body>
+</html>

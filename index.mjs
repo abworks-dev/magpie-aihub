@@ -1,0 +1,104 @@
+import { randomUUID } from 'node:crypto';
+import { PROVIDER, BASE, settings, manualBundle, configModels } from './src/config.mjs';
+import { login } from './src/api.mjs';
+import { Account, accountSaver } from './src/account.mjs';
+import { Router } from './src/router.mjs';
+
+async function AIHubPlugin({ client }, initialOptions = {}) {
+  const options = settings(initialOptions);
+  const runtimes = new Map();
+  function runtime(auth, getCurrentAuth) {
+    let data;
+    try { data = JSON.parse(auth?.key); } catch { throw new Error('Sign in to AIHub Auto using the plugin authentication form'); }
+    if (!data?.instanceId) throw new Error('Unsupported AIHub authentication data');
+    let item = runtimes.get(data.instanceId);
+    if (!item) {
+      if (runtimes.size >= 32) throw new Error('Too many active AIHub plugin accounts; reload the plugin host');
+      item = { getCurrentAuth };
+      const account = new Account(data, { save: accountSaver(client, () => {
+        if (!item.getCurrentAuth) throw new Error('Account loader is not ready');
+        return item.getCurrentAuth();
+      }) });
+      Object.assign(item, { account, router: new Router(account, options) });
+      runtimes.set(data.instanceId, item);
+    }
+    if (getCurrentAuth) item.getCurrentAuth = getCurrentAuth;
+    return item;
+  }
+  return {
+    config: async config => {
+      config.provider ??= {};
+      const current = config.provider[PROVIDER] ?? {};
+      config.provider[PROVIDER] = {
+        ...current, name: 'AIHub Auto', npm: options.defaultApi === 'chat' ? '@ai-sdk/openai-compatible' : '@ai-sdk/openai', api: BASE,
+        options: { ...current.options, baseURL: BASE },
+        models: { ...configModels(options), ...current.models },
+      };
+    },
+    auth: {
+      provider: PROVIDER,
+      methods: [
+        {
+          type: 'api', label: '导入分组 Key（无需账号密码）',
+          prompts: [{ type: 'password', key: 'keys', message: '分组 Key JSON 数组（保密保存）' }],
+          authorize: async inputs => {
+            try {
+              const data = { version: 1, mode: 'manual', instanceId: randomUUID(), identity: 'Imported group keys', keys: manualBundle(inputs.keys) };
+              return { type: 'success', key: JSON.stringify(data), metadata: { email: data.identity } };
+            } catch { return { type: 'failed' }; }
+          },
+        },
+        {
+          type: 'api', label: 'AIHub 账户登录（可管理专用分组 Key）',
+          prompts: [
+            { type: 'text', key: 'email', message: 'AIHub 邮箱' },
+            { type: 'password', key: 'password', message: 'AIHub 密码（仅用于本次登录）' },
+          ],
+          authorize: async (inputs, context = {}) => {
+            try {
+              const tokens = await login(inputs.email, inputs.password, undefined, context.signal);
+              const data = { version: 1, mode: 'managed', instanceId: randomUUID(), ...tokens, keys: [] };
+              return { type: 'success', key: JSON.stringify(data), metadata: { email: data.identity } };
+            } catch { return { type: 'failed' }; }
+          },
+        },
+      ],
+      loader: async getAuth => {
+        const auth = await getAuth();
+        const current = runtime(auth, getAuth);
+        return {
+          apiKey: 'magpie-aihub-internal', baseURL: BASE,
+          fetch: async (input, init) => {
+            const latest = await getAuth();
+            let currentInstance;
+            try { currentInstance = JSON.parse(latest?.key).instanceId; } catch { /* disconnected */ }
+            if (currentInstance !== current.account.data.instanceId) throw new Error('AIHub account changed; reload this provider connection');
+            return current.router.fetch(input, init);
+          },
+        };
+      },
+    },
+    provider: {
+      id: PROVIDER,
+      models: async (provider, { auth, signal } = {}) => {
+        if (options.models.length || !auth?.key) return provider.models ?? {};
+        const ids = await runtime(auth).router.discover(signal);
+        return Object.fromEntries(ids.map(id => [id, {
+          id, providerID: PROVIDER, name: id,
+          api: { id, url: BASE, npm: options.defaultApi === 'chat' ? '@ai-sdk/openai-compatible' : '@ai-sdk/openai' },
+          limit: { context: 128000, output: 16384 },
+          capabilities: { reasoning: false, toolcall: true, attachment: false, input: { text: true, image: false }, output: { text: true } },
+          cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+          variants: {}, headers: {}, options: {}, release_date: '', status: 'active',
+        }]));
+      },
+    },
+    'chat.headers': async (input, output) => {
+      if (input.model?.providerID !== PROVIDER) return;
+      output.headers ??= {};
+      if (input.sessionID) output.headers['x-aihub-auto-session'] = input.sessionID;
+    },
+  };
+}
+
+export default { id: 'magpie-aihub', server: AIHubPlugin };

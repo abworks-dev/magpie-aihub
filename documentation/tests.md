@@ -1,0 +1,54 @@
+# 测试覆盖与验收记录
+
+## 当前证据
+
+2026-11-16，本地 Windows / Node 24.22.1 执行 `npm test`：87 项测试通过，失败、取消、跳过均为 0。包含嵌套测试计数，测试全部使用模拟 fetch、模拟宿主和内存流，不含真实凭据或付费模型调用。`npm run check` 与 `npm pack --dry-run` 也通过。
+
+GitHub Actions 配置 Node 22 与 Bun 两个任务；运行结果以仓库 Actions 为准，本地未安装 Bun。本文件不是目标 Magpie 主机或 AIHub 线上验收报告。
+
+## 行为 → 测试映射
+
+| 行为与边界 | 测试文件 | 验证方式与限制 |
+| --- | --- | --- |
+| 倍率上限、零倍率、允许 / 排除、检测与模型筛选 | [router.test.mjs](../test/router.test.mjs)、[account.test.mjs](../test/account.test.mjs) | 模拟候选、异常倍率与目录；不证明实际账号倍率 |
+| 会话亲和、容量边界、新会话选组、冷却与 Retry-After | [router.test.mjs](../test/router.test.mjs)、[review.test.mjs](../test/review.test.mjs) | 模拟时间 / 响应头，验证候选顺序与尝试次数；不证明提供方缓存命中 |
+| 401 / 403 / 429 / 5xx 与网络、首块超时 | [router.test.mjs](../test/router.test.mjs) | 模拟推理；检查有限切换、普通调用错误不重试 |
+| 首块后中断不重放、调用方取消 | [router.test.mjs](../test/router.test.mjs) | 可控制 Web Streams；未测试真实 SSE 代理、网络和 SDK 完整链路 |
+| 固定 origin / 方法 / 路径、请求头白名单、body 上限 | [router.test.mjs](../test/router.test.mjs) | 检查出站请求，拒绝未支持路由和服务端状态续接 |
+| 入站 body 阻塞、共享任务等待方取消 | [review.test.mjs](../test/review.test.mjs) | 卡住的流 / Promise 与 AbortSignal；验证等待期限和取消 |
+| 模型发现故障换候选 | [review.test.mjs](../test/review.test.mjs) | 撤销 Key 的模型读取失败后只在备用 Key 发推理 |
+| 用户 API 包装、目录 v2 回退和倍率校验 | [account.test.mjs](../test/account.test.mjs) | MIT 公开适配器观察的字段形状；不能保证 AIHub 接口不变 |
+| 令牌刷新与保存 | [account.test.mjs](../test/account.test.mjs)、[review.test.mjs](../test/review.test.mjs) | 模拟 401、持久化失败、重叠保存与账号更换；无宿主 CAS，检查后写入前的窄竞态未消除 |
+| 创建前持久化、并发只建一次、未知结果不重建 | [account.test.mjs](../test/account.test.mjs) | 检查事件顺序和 POST 次数；不证明远端落实幂等键 |
+| 精确实例 Key 恢复、池上限、不修改其他 Key | [account.test.mjs](../test/account.test.mjs) | 模拟 Key 列表和不完整响应；没有 DELETE / PUT 路径 |
+| 插件导出、config / loader / models / chat.headers | [plugin.test.mjs](../test/plugin.test.mjs) | 模拟 Magpie hook 调用；不等于真实版本兼容测试 |
+| UI 配置保存、保留高级配置、bridge 缺失 / 保存失败 | [ui.test.mjs](../test/ui.test.mjs) | Node VM 与模拟 DOM / bridge；未做真实浏览器视觉验收 |
+
+## 可重复执行
+
+```sh
+npm run check
+npm test
+npm pack --dry-run
+```
+
+没有外部测试依赖，不需要 `.env`、真实 Key、账号或联网模型。CI 的 Bun 任务执行 `bun test`。
+
+## 尚未验证
+
+- 目标 Magpie 版本识别包清单、加载插件、显示密码提示和设置页、应用每模型协议、向 hook 传入会话 ID。
+- Magpie 多账号上下文及认证存储的加密、CAS、备份和重载行为。
+- AIHub 真实登录 / 验证码 / 2FA、管理接口字段、模型目录、专属倍率和 Key 创建 / 列表返回完整 Key 的能力。
+- Responses 与 Chat Completions 的真实流、工具调用、长会话、取消与缓存行为。
+- 实际费用、上游幂等、首块前重试是否产生重复计费、AIHub 后台自动改组的影响。
+- 宿主重载会清空内存亲和；多进程共享同一认证包没有并发去重保证。共享目录 / 令牌刷新仍可能受首先发起者取消影响。
+
+## 后续真实验收顺序
+
+1. 在目标 Magpie 安装固定 commit，先核对插件页面与非敏感设置。
+2. 导入两把已在 AIHub 设置有限额度、固定分组的测试 Key，关闭 `requirePassed`，填写准确倍率 / 模型。
+3. 分别验证 Responses / Chat 与完整历史请求。少量真实推理可能计费，应在用户授权的费用范围内执行。
+4. 核对会话保持、取消和受控故障。检查 AIHub 用量，不将模拟测试当作真实费用证明。
+5. 账户模式先验证只读目录；如用户接受自动建 Key，再启用开关，检查专用名称、保存与恢复。没有确认远端状态时不要绕过 pending。
+
+相关：[架构](architecture.md)、[流程](flows.md)、[权限](permissions.md)、[配置与凭据](variables.md)、[自动化](automation.md)。
