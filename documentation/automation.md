@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | 账号令牌刷新 | managed 管理调用收到 401，或准备新组 Key 时已知 expires 在 30 秒内且有 refresh；当前账号；不是定时刷新 | 读取 refresh，要求非空 access_token；更新 access / refresh / expires 并保存 auth 包 | 合并 401 刷新；等待可取消；GET 可再调一次；写入不重放；保存失败则失败 |
 | 目录刷新 | 模型请求取候选，快照超过 refreshMs；当前实例 | 读取账号 groups / rates / 大厅；只输出合法 openai 候选与倍率 / 状态 | 合并并发刷新；未取消且旧快照年龄不超过 maxStaleMs 才可兜底 |
-| 模型发现 / 读取 | 宿主发现或路由准备；仅当前实例已有 Key | 导入 models 或 GET 返回的 `data[].id` 字符串；发现输出去重排序 ID | 不创建 Key；发现失败报错；路由中 modelIds 失败冷却该组并继续下个候选，取消则退出；结果不保证推理可用 |
+| 模型发现 / 读取 | 宿主发现或路由准备；managed 读取账号分组与大厅，manual / 补充来源仅当前实例已有 Key | 大厅广告模型、有效分组模型列表或已有 Key 的 `data[].id`；按候选政策筛选，发现输出去重排序 ID | 不创建 Key；发现失败报错；路由中 modelIds 失败冷却该组并继续下个候选，取消则退出；结果不保证推理可用 |
 | 专用 Key 恢复 / 创建 | managed 模型请求缺组 Key；账号属于用户。新建默认禁用，须预先开启 autoCreateKeys | 读取 keys / pending 和账号 Key 列表；仅接受精确实例名称、相同组、完整有效 Key | 先持久化 pending，单次 POST；未知结果含 401 不重建；重复恢复结果拒绝；keyFor 失败停止路由 |
 | 请求路由 / 换组 | 宿主调用本供应商；fetch 前比对当前认证 instanceId | 读取 body、组目录、模型列表和内存状态；输出上游 Response 流，或 `{error:{type:'aihub_routing_error',message}}` | 限推理 maxAttempts；首块前有限重试，首块后不重放；body 读取 / 等待 / 上游请求可取消 |
 

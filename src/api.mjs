@@ -50,6 +50,15 @@ const numeric = value => {
   if (typeof value === 'string' && !value.trim()) return undefined;
   return Number.isFinite(Number(value)) ? Number(value) : undefined;
 };
+// Catalogue IDs are finite advertised names, never patterns or display labels.
+const validModelId = value => typeof value === 'string' && /^[A-Za-z0-9_./:@+-]{1,160}$/.test(value);
+const modelRestriction = value => {
+  if (value === undefined || value === null) return undefined;
+  if (value.enabled === false) return undefined;
+  if (value.enabled !== true || !Array.isArray(value.models) || !value.models.every(validModelId)) return [];
+  return [...new Set(value.models)];
+};
+
 export function normalizeHall(data) {
   return new Map(list(data).flatMap(r => {
     const id = Number(r.group_id);
@@ -64,7 +73,10 @@ export function normalizeHall(data) {
       visible: r.visible_in_hall !== false, blocked: blocked || textBlocked,
       passed: detection.status === 'passed', multiplier: numeric(r.rate_multiplier),
       latency: latency > 0 ? latency : undefined,
-      rejected: (r.model_cards ?? []).filter(m => m.health === 'failed').map(m => m.model),
+      advertisedModels: Array.isArray(r.model_cards)
+        ? [...new Set(r.model_cards.filter(m => validModelId(m?.model)).map(m => m.model))] : undefined,
+      rejected: Array.isArray(r.model_cards)
+        ? r.model_cards.filter(m => m?.health === 'failed' && validModelId(m.model)).map(m => m.model) : [],
     }]];
   }));
 }
@@ -79,6 +91,5 @@ export function groupCandidate(group, rates, hall) {
   if (Object.hasOwn(rates, String(id)) && override === undefined) return undefined;
   const multiplier = override ?? numeric(group.rate_multiplier) ?? h.multiplier;
   if (multiplier === undefined || multiplier < 0) return undefined;
-  const restriction = group.models_list_config;
-  return { ...h, groupId: id, multiplier, models: restriction?.enabled ? restriction.models ?? [] : undefined };
+  return { ...h, groupId: id, multiplier, models: modelRestriction(group.models_list_config) };
 }

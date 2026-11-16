@@ -33,7 +33,7 @@
 
 **参与者 / 前提 / 结果：** 宿主模型发现或模型请求；有效认证；获得模型 ID 或候选组，不能据此认定推理已通过。
 
-- `provider.models` 有显式 models 时直接使用配置；无认证不发现。否则只遍历前 `poolSize` 个已有 Key；不为下拉列表创建 Key。
+- `provider.models` 有显式 models 时直接使用配置；无认证不发现。managed 从可用分组与大厅广告模型发现，按倍率、组范围、检测、模型限制筛选；没有大厅模型时可用有效的非空组模型限制列表。目录缺少可识别模型证据且无已有 Key 补充时明确报错，不静默伪装为空目录。manual 保持读取前 `poolSize` 个已有 Key；不为下拉列表创建 Key。
 - Key 自带 models 时直接使用；否则以分组 Bearer Key `GET /v1/models`，15 秒超时、拒绝重定向，要求 `data` 为数组；按组内存缓存 `refreshMs`。
 - 请求所需目录在缓存过期后惰性读取。managed 并行 GET `/api/v1/groups/available`、`/api/v1/groups/rates`、`/api/v2/public/providers`；仅 public v2 返回 404 / 410 时回退 v1。
 - 目录只接受 active / openai 且仍在大厅可见、无显式检测失败的组；倍率优先账号 rates，再 group，再大厅。刷新失败仅在 `maxStaleMs` 内使用旧快照，否则失败；调用方取消等待时不回退旧快照。

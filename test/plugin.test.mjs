@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import entry from '../index.mjs';
 import { settings, manualBundle } from '../src/config.mjs';
 
@@ -27,6 +29,46 @@ test('manual auth bundle remains secret and loader uses dedicated internal place
   assert.equal(loader.apiKey, 'magpie-aihub-internal');
   const discovered = await hooks.provider.models({ models: {} }, { auth: { key: result.key } });
   assert.equal(discovered.model.api.npm, '@ai-sdk/openai');
+});
+
+test('fresh managed auth exposes advertised models through the real provider hook without creating keys', async () => {
+  const priorFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const path = new URL(url).pathname;
+    assert.equal(new URL(url).origin, 'https://aihub.top');
+    assert.equal(init.method ?? 'GET', 'GET');
+    assert.equal(new Headers(init.headers).get('authorization'), 'Bearer synthetic-access');
+    calls.push(path);
+    const fixtures = {
+      '/api/v1/groups/available': [{ id: 1, status: 'active', platform: 'openai', rate_multiplier: 0.1 }],
+      '/api/v1/groups/rates': {},
+      '/api/v2/public/providers': [{ group_id: 1, platform: 'openai', available: true, model_cards: [{ model: 'advertised-model', health: 'passed' }] }],
+    };
+    assert.ok(Object.hasOwn(fixtures, path), 'discovery must not prepare keys or infer');
+    return Response.json({ code: 0, data: fixtures[path] });
+  };
+  try {
+    const hooks = await entry.server({ client: { auth: { set: () => assert.fail('discovery must not persist new keys') } } });
+    const auth = { type: 'api', key: JSON.stringify({ version: 1, mode: 'managed', instanceId: 'fresh-managed', access: 'synthetic-access', keys: [] }) };
+    const models = await hooks.provider.models({ models: {} }, { auth });
+    assert.deepEqual(Object.keys(models), ['advertised-model']);
+    assert.equal(models['advertised-model'].api.npm, '@ai-sdk/openai');
+    assert.equal(models['advertised-model'].providerID, 'aihub-auto');
+    assert.equal(calls.length, 3);
+  } finally { globalThis.fetch = priorFetch; }
+});
+
+test('metadata and page embed the same verified official AIHub image without another asset route', async () => {
+  const metadata = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  const html = await readFile(new URL('../ui/index.html', import.meta.url), 'utf8');
+  const icon = metadata.magpie.icon;
+  assert.match(icon, /^data:image\/png;base64,/);
+  const bytes = Buffer.from(icon.slice(icon.indexOf(',') + 1), 'base64');
+  assert.equal(bytes.length, 20448);
+  assert.equal(createHash('sha256').update(bytes).digest('hex'), '4ca27ef38578050dbf72af67769efd77fd3cba146916f60bcb6f1198b93793f0');
+  assert.ok(html.includes(`src="${icon}"`));
+  assert.ok(html.includes('alt="" aria-hidden="true"'), 'decorative brand image keeps the visible page heading as its accessible name');
 });
 
 test('session header is scoped to this provider', async () => {

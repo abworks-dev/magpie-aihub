@@ -11,13 +11,13 @@
 | maxMultiplier | 0.16；0–100 有限数 | UI + Router | 倍率筛选上限，0 仅免费组；名义阈值，不是金额预算 / 远端 Key 配额 |
 | strategy | balanced；economy / balanced / speed | UI + Router | 分别按倍率、倍率×(1+min(ms,60000)/10000)、延迟排序；未知延迟取 30000ms |
 | maxAttempts | 3；整数 1–5 | UI + Router | 推理发送次数含首次；Key / 模型读取不计入；首块前切换可能重复计费 |
-| poolSize | 4；整数 1–8 | UI + Account / Router | managed 已保存 Key 数量上限；池满不自动换 Key / 删 Key；发现只读前 N 个已有 Key |
+| poolSize | 4；整数 1–8 | UI + Account / Router | managed 已保存 Key 数量上限；池满不自动换 Key / 删 Key；managed 发现不受是否已有 Key 限制；已有 Key 补充最多读取 N 个 |
 | excludedGroups | []；正安全整数数组 | UI + Router | 排除优先 |
 | allowedGroups | []；正安全整数数组 | UI + Router | 空数组不额外限组，仍受其他筛选 |
 | requirePassed | false；boolean | UI + Router | 要求大厅检测 passed=true；manual 没有该证据，开启会排除全部手工组 |
 | autoCreateKeys | false；boolean | UI + Account | 用户主动开启才可 POST 创建；关闭不撤销已建 Key |
 | defaultApi | responses；responses / chat | UI + 入口 / 配置 | 选择宿主适配协议，不转换请求语义 |
-| models | []；最多 200 项且 ID 唯一 | UI + 入口 / 配置 | 字符串或 `{id, api?, context?, output?}`；ID 1–160 个允许字符；api 同上；context / output 为正安全整数。显式配置不证明远端支持 |
+| models | []；最多 200 项且 ID 唯一 | UI + 入口 / 配置 | 字符串或 `{id, api?, context?, output?}`；ID 1–160 个允许字符；api 同上；context / output 为正安全整数。显式配置优先；空列表 managed 从账号目录/大厅发现、manual 读取已有 Key；不证明远端推理可用 |
 | refreshMs | 60000；整数 10000–3600000ms | 服务端，UI 保留 | 目录 / 模型缓存新鲜期；按使用惰性刷新，不是轮询任务 |
 | maxStaleMs | 600000；整数 10000–3600000ms | 服务端，UI 保留 | 目录刷新失败可接受的快照年龄；取消等待时不回退；不保证状态仍有效 |
 | firstByteTimeoutMs | 30000；整数 10–120000ms | 服务端，UI 保留 | 每次推理直到响应首块的等待；超时可换组 |

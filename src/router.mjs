@@ -43,13 +43,15 @@ export class Router {
     this.sessions = new Map(); this.cooldown = new Map(); this.latency = new Map(); this.rejected = new Map();
     this.locks = new Map();
   }
-  eligible(c, model) {
+  eligibleGroup(c) {
     const o = this.o;
     return !o.excludedGroups.includes(c.groupId) && (!o.allowedGroups.length || o.allowedGroups.includes(c.groupId)) &&
       c.multiplier <= o.maxMultiplier && c.available !== false && !c.blocked &&
-      (!o.requirePassed || c.passed === true) && (!c.models || c.models.includes(model)) &&
-      !(c.rejected ?? []).includes(model) && !this.rejected.has(`${c.groupId}:${model}`) &&
-      (this.cooldown.get(c.groupId) ?? 0) <= this.now();
+      (!o.requirePassed || c.passed === true) && (this.cooldown.get(c.groupId) ?? 0) <= this.now();
+  }
+  eligible(c, model) {
+    return this.eligibleGroup(c) && (!c.models || c.models.includes(model)) &&
+      !(c.rejected ?? []).includes(model) && !this.rejected.has(`${c.groupId}:${model}`);
   }
   score(c) {
     const ms = this.latency.get(c.groupId) ?? c.latency ?? 30000;
@@ -213,11 +215,47 @@ export class Router {
     } finally { clearTimeout(budgetTimer); unlock(); }
   }
   async discover(signal) {
-    // Model discovery is read-only: never create keys just to populate a dropdown.
+    // Discovery never prepares keys or probes inference. Manual imports retain
+    // their existing key-backed discovery behavior and need no management login.
+    signal?.throwIfAborted();
     const ids = new Set();
-    for (const key of this.account.data.keys.slice(0, this.o.poolSize)) {
-      for (const id of await this.account.modelIds(key, this.o, signal)) ids.add(id);
+    if (this.account.data.mode !== 'managed') {
+      for (const key of this.account.data.keys.slice(0, this.o.poolSize)) {
+        for (const id of await this.account.modelIds(key, this.o, signal)) ids.add(id);
+      }
+      return [...ids].sort();
     }
+    this.prune();
+    const catalogue = await this.account.catalogue(this.o, signal);
+    const candidates = catalogue.filter(c => this.eligibleGroup(c));
+    // No account-visible/eligible groups is a legitimate empty result. A group
+    // with unknown models is different: do not report successful empty discovery.
+    let evidence = candidates.length === 0;
+    for (const candidate of candidates) {
+      signal?.throwIfAborted();
+      // An enabled, validated restriction can advertise finite IDs when cards
+      // are absent. Empty/unknown cards never mean arbitrary model support.
+      const advertised = candidate.advertisedModels?.length ? candidate.advertisedModels : candidate.models;
+      if (advertised !== undefined) {
+        evidence = true;
+        for (const id of advertised) if (this.eligible(candidate, id)) ids.add(id);
+      }
+    }
+    // Only dedicated keys already stored for still-permitted catalogue groups
+    // can supplement public evidence; never enumerate/adopt unrelated keys.
+    for (const key of this.account.data.keys.slice(0, this.o.poolSize)) {
+      const candidate = candidates.find(c => c.groupId === key.groupId);
+      if (!candidate || key.owned !== true || candidate.models?.length === 0) continue;
+      try {
+        const models = await this.account.modelIds(key, this.o, signal);
+        evidence = true;
+        for (const id of models) if (this.eligible(candidate, id)) ids.add(id);
+      } catch {
+        signal?.throwIfAborted();
+        // Valid catalogue advertisements remain useful if a dedicated key expired.
+      }
+    }
+    if (!evidence) throw new Error('AIHub model discovery has no supported model IDs in the eligible catalogue or readable dedicated keys; configure explicit model IDs or check catalogue access.');
     return [...ids].sort();
   }
 }

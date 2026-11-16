@@ -2,14 +2,16 @@
 
 面向 **aihub.top 普通消费者** 的 Magpie Provider 插件。用自己的账户或分组 Key，在 Magpie 中提供一个 `aihub-auto` 上游入口，按倍率和延迟选组、保留会话线路、在首次响应前有限重试。
 
-**状态：0.1.2 开发预览，仓库公开。** 独立实现，没有复制 aihub-auto 源码。已用官方 Magpie 0.1.3250 隔离验证插件加载、合成凭据登录与两种模型 SDK 注册；0.1.2 修复沙箱中点击保存无反应的问题，加入真实浏览器回归。真实 AIHub 账户与推理尚未联调。当前支持 AIHub **OpenAI 平台分组** 的 Responses / Chat Completions，不宣称原生 Claude/Gemini 全平台支持。
+**状态：0.1.3 开发预览，仓库公开。** 独立实现，没有复制 aihub-auto 源码。已用官方 Magpie 0.1.3250 隔离验证插件加载、合成凭据登录与两种模型 SDK 注册；0.1.2 修复沙箱中点击保存无反应，0.1.3 修复新账户没有专用 Key 时的自动模型发现，并使用 AIHub 官方站点图标。真实 AIHub 账户与推理尚未由开发者联调。当前支持 AIHub **OpenAI 平台分组** 的 Responses / Chat Completions，不宣称原生 Claude/Gemini 全平台支持。
+
+图标取自 [AIHub 官方站点](https://aihub.top/) 公开页面的 PNG favicon，并内嵌到插件元数据和设置页；不额外请求图标地址或新增代理资源路径。品牌图像权利归原站点。
 
 ## 安装
 
 在 Magpie 插件页从 Git 安装：
 
 ```text
-github:abworks-dev/magpie-aihub#v0.1.2
+github:abworks-dev/magpie-aihub#v0.1.3
 ```
 
 公开仓库无需 GitHub 私有仓库权限；运行 Magpie 的主机仍需能够访问 GitHub。也可将完整仓库放到 Magpie 容器/主机可读路径，使用本地插件安装方式。无需编译，不启动额外监听端口，不依赖独立代理服务。建议固定版本或 commit。详细步骤及失败时需要的脱敏信息见[安装与首次验收](documentation/installation.md)。
@@ -38,7 +40,9 @@ github:abworks-dev/magpie-aihub#v0.1.2
 
 在认证界面输入 AIHub 邮箱和密码。密码仅用于登录，保存访问/刷新令牌；需要 2FA 或交互验证码时登录可能失败，可改用手工 Key。
 
-在插件配置页指定实际模型 ID，并主动开启 `autoCreateKeys` 后，首次业务请求才会按需创建专用 Key。新账户暂时没有分组 Key，空模型列表不会为了发现模型而自动建 Key，因此**首次账户模式必须配置模型 ID**。
+登录后，模型列表留空即可从账号可用分组与供应商大厅发现模型，不需要先创建专用 Key。发现结果受实际倍率、允许/排除分组、检测状态及组内模型限制筛选；目录未提供可识别模型时会提示错误，可手工指定准确 ID。显式配置模型优先于自动发现。
+
+**获取模型与调用模型是两步。** 自动发现只读取目录，不调用推理、不创建 Key。若账户尚无本插件专用 Key，首次业务请求前仍需主动开启 `autoCreateKeys`，或改用手工导入分组 Key。自动发现的模型使用“默认 API”，不会凭模型名称猜协议。
 
 此模式会：
 
@@ -65,7 +69,7 @@ github:abworks-dev/magpie-aihub#v0.1.2
 | `requirePassed` | `false` | 仅使用大厅 `passed` 分组；手工模式不支持 |
 | `autoCreateKeys` | `false` | 允许账户模式按需创建 Key；关闭不撤销已有 Key |
 | `defaultApi` | `responses` | 默认模型协议，另一个值为 `chat` |
-| `models` | `[]` | 字符串 ID，或 `{id, api, context, output}`；空列表只从已有 Key 发现 |
+| `models` | `[]` | 字符串 ID，或 `{id, api, context, output}`；空列表：账户模式从分组/大厅发现，手工模式读取已有 Key |
 | `firstByteTimeoutMs` | `30000` | 单次等待响应头和首字节的期限 |
 | `totalTimeoutMs` | `90000` | 路由与首字节总预算，成功输出后不截断长流 |
 | `refreshMs` / `maxStaleMs` | `60000` / `600000` | 请求触发的目录刷新间隔 / 故障时旧目录可用上限 |
