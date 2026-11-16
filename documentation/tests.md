@@ -4,7 +4,7 @@
 
 2026-11-16，本地 Windows / Node 24.22.1 执行 `npm test`：87 项测试通过，失败、取消、跳过均为 0。包含嵌套测试计数，测试全部使用模拟 fetch、模拟宿主和内存流，不含真实凭据或付费模型调用。`npm run check` 与 `npm pack --dry-run` 也通过。
 
-GitHub Actions 配置 Node 22 与 Bun 两个任务；运行结果以仓库 Actions 为准，本地未安装 Bun。本文件不是目标 Magpie 主机或 AIHub 线上验收报告。
+GitHub Actions 在提交 `3277e4bab14f9b5c51456b96f7a1877daccd3767` 的[验证运行](https://github.com/abworks-dev/magpie-aihub/actions/runs/43859625988)中，Node 22 的语法、87 项测试与打包检查均通过；Bun 1.4.4 的 49 个顶层测试通过（与 Node 嵌套计数口径不同）。首轮 CI 发现 Bun 包装流式 Request 时源取消行为不同，已通过无覆盖参数时复用原 Request 修正并复验。本地未安装 Bun。本文件不是目标 Magpie 主机或 AIHub 线上验收报告。
 
 ## 行为 → 测试映射
 
