@@ -26,6 +26,8 @@ const VIEW_TOKEN = randomBytes(32).toString('hex');
 const TOKEN_PLACEHOLDER = '__AIHUB_SERVICE_TOKEN__';
 const TOKEN_HEADER = 'x-aihub-service-token';
 const MAX_BYTES = 1024 * 1024;
+// One listener per port in this process: repeated plugin factories reuse it.
+const started = new Map();
 const list = (value, limit) => Array.isArray(value) ? value.slice(0, limit) : [];
 const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const bool = value => typeof value === 'boolean' ? value : null;
@@ -147,16 +149,35 @@ export function serviceHandler({ port, getSnapshot, token = VIEW_TOKEN } = {}) {
   };
 }
 
-/** Start once per plugin factory: the page itself lives here. Port 0 supports local tests. */
+/**
+ * Start once per plugin factory: the page itself lives here. Port 0 supports
+ * local tests. A repeated start on the same port reuses the running listener and
+ * points it at the newest snapshot supplier instead of failing: a plugin factory
+ * may be created more than once per host process, and its own page should not
+ * look like a port conflict.
+ */
 export async function startService({ port, getSnapshot, token } = {}) {
-  const server = createServer(serviceHandler({ port, getSnapshot, token }));
+  if (port !== 0 && started.has(port)) {
+    started.get(port).setSource(getSnapshot);
+    return started.get(port).server;
+  }
+  const live = { getSnapshot };
+  const server = createServer(serviceHandler({ port, getSnapshot: () => live.getSnapshot(), token }));
   await new Promise((resolve, reject) => {
-    const failed = err => { server.removeListener('listening', ready); reject(err); };
-    const ready = () => { server.removeListener('listening', failed); resolve(); };
-    server.once('error', failed);
-    server.once('listening', ready);
+    const settle = error => {
+      server.removeListener('listening', settle);
+      server.removeListener('error', settle);
+      if (error) reject(new Error(`page service cannot listen on 127.0.0.1:${port}: ${error.message}`));
+      else resolve();
+    };
+    server.once('listening', () => settle());
+    server.once('error', settle);
     server.listen(port, '127.0.0.1');
   });
   server.unref();
+  if (port !== 0) {
+    started.set(port, { server, setSource: next => { live.getSnapshot = next; } });
+    server.once('close', () => started.delete(port));
+  }
   return server;
 }

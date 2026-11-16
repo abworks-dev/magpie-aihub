@@ -16,7 +16,7 @@ async function AIHubPlugin({ client }, initialOptions = {}) {
   try {
     await startService({ port: options.monitorPort, getSnapshot: () => monitorSnapshot(runtimes, options) });
   } catch (error) {
-    console.error(`[aihub-auto] page service on 127.0.0.1:${options.monitorPort} did not start: ${error?.code ?? error?.message ?? 'unknown error'}`);
+    console.error(`[aihub-auto] page service on 127.0.0.1:${options.monitorPort} did not start: ${error?.message ?? error ?? 'unknown error'}`);
   }
   function runtime(auth, getCurrentAuth) {
     let data;

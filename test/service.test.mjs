@@ -161,11 +161,26 @@ test('the service binds once on loopback and rejects a second listener on the sa
   const first = await startService({ port: 0, token: TOKEN, getSnapshot: async () => snapshot() });
   const port = first.address().port;
   assert.equal(first.address().address, '127.0.0.1');
-  await assert.rejects(() => startService({ port, token: TOKEN, getSnapshot: async () => snapshot() }), /EADDRINUSE/);
+  await assert.rejects(() => startService({ port, token: TOKEN, getSnapshot: async () => snapshot() }), /cannot listen/);
   const response = await fetch(`http://127.0.0.1:${port}/snapshot`, { headers: AUTH });
   assert.equal(response.status, 200);
   assert.equal((await response.json()).accounts.length, 1);
   await new Promise(resolve => first.close(resolve));
+});
+
+test('a plugin factory that starts twice reuses its own listener instead of failing', async () => {
+  const probe = await startService({ port: 0, token: TOKEN, getSnapshot: async () => snapshot() });
+  const port = probe.address().port;
+  await new Promise(resolve => probe.close(resolve));
+  const claimed = await startService({ port, token: TOKEN, getSnapshot: async () => snapshot() });
+  const again = await startService({ port, token: TOKEN, getSnapshot: async () => snapshot() });
+  assert.equal(again, claimed, 'the second factory gets the running listener');
+  const response = await fetch(`http://127.0.0.1:${port}/snapshot`, { headers: AUTH });
+  assert.equal(response.status, 200, 'the reused listener still serves the snapshot');
+  await new Promise(resolve => claimed.close(resolve));
+  const rebound = await startService({ port, token: TOKEN, getSnapshot: async () => snapshot() });
+  assert.notEqual(rebound, claimed, 'a closed listener is not reused');
+  await new Promise(resolve => rebound.close(resolve));
 });
 
 test('the handler requires a snapshot supplier, a usable port and a well-formed token', () => {

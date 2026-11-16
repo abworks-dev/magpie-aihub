@@ -2,11 +2,13 @@
 
 ## 当前证据
 
-2026-11-17 02:14–02:15 +08，本地 Windows / Node 24.22.1 对 v0.2.1 执行 `node --test`：182 项测试通过，失败、取消、跳过均为 0（含嵌套计数）。路由与账号测试使用模拟 fetch、模拟宿主和内存流；页面服务测试启动真实回环 HTTP 服务并提供合成快照。不含真实凭据或付费模型调用。`npm run check` 对入口、服务端模块与 UI 脚本逐个做语法检查，exit 0。`npm pack --dry-run` 包含 23 个预期文件、99.1 kB，未包含测试凭据或隔离宿主目录。
+2026-11-17 02:14–02:15 +08，本地 Windows / Node 24.22.1 对 v0.2.1 执行 `node --test`：183 项测试通过，失败、取消、跳过均为 0（含嵌套计数）。路由与账号测试使用模拟 fetch、模拟宿主和内存流；页面服务测试启动真实回环 HTTP 服务并提供合成快照。不含真实凭据或付费模型调用。`npm run check` 对入口、服务端模块与 UI 脚本逐个做语法检查，exit 0。`npm pack --dry-run` 包含 23 个预期文件、99.1 kB，未包含测试凭据或隔离宿主目录。
 
 ## v0.2.1 单页监控、页面服务与 Key 错误
 
-设置与监控合并为一份页面，由 page.service 在 127.0.0.1 提供，Magpie 的静态页只保留 bridge。测试覆盖：服务的精确 Host、Origin 缺省或 `null`、GET/HEAD-only、无 body、端口冲突与参数校验；`/snapshot` 的进程级 token（缺失/错误 403）、预检只放行 GET + 该头、`Access-Control-Allow-Origin: null`、响应体上限与端口占用拒绝；服务提供的 HTML 带 token 占位替换和 `../bridge.js` 重写，且不落盘。VM 测试覆盖设置页的六平台、模型限制与端口保存，监控标签在静态页跳转服务、在服务页同源读取快照、无 token 时不猜 URL、桌面版提示回环地址。
+设置与监控合并为一份页面，由 page.service 在 127.0.0.1 提供，Magpie 的静态页只保留 bridge。测试覆盖：服务的精确 Host、Origin 缺省或 `null`、GET/HEAD-only、无 body、端口冲突与参数校验；`/snapshot` 的进程级 token（缺失/错误 403）、预检只放行 GET + 该头、`Access-Control-Allow-Origin: null`、响应体上限与端口占用拒绝；服务提供的 HTML 带 token 占位替换和 `../bridge.js` 重写，且不落盘。服务的监听失败统一包装为 `page service cannot listen on 127.0.0.1:<port>: <message>`，端口冲突断言不依赖各运行时错误文案——Bun 1.4.4 的报错是 "Failed to start server. Is port N in use?" 且不带 `code`，旧断言按 Node 的 `EADDRINUSE` 编写曾在 CI 的 bun 任务失败。同一进程内对同一端口再次启动会复用已有监听并改指向最新快照供应者，关闭后释放，避免每个插件工厂各起一份监听。
+
+VM 测试覆盖设置页的六平台、模型限制与端口保存，监控标签在静态页跳转服务、在服务页同源读取快照、无 token 时不猜 URL、桌面版提示回环地址。
 
 2026-11-17 01:40 +08 与本轮修改后，真实 Edge 经合成 Magpie service 代理加载合并页：`passed: true`、`rows: 1`、`filters: 2`、`kpis: 4`、`reads: 1`、`error: false`。同轮 Edge 设置页回归：`saves: 1`，成功状态为“已保存。”，控件恢复，exit 0。桥接与快照为合成对象，未登录用户实例；这不是生产 Cloud service 授权或真实 Magpie 浏览器代理验收。
 
