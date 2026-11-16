@@ -2,10 +2,10 @@
 
 ## 安装固定版本
 
-**v0.2.1 为预发布版本。** 在已登录的 Magpie 插件管理页添加以下固定 Git 来源：
+**v0.2.2 为预发布版本。** 在已登录的 Magpie 插件管理页添加以下固定 Git 来源：
 
 ```text
-github:abworks-dev/magpie-aihub#v0.2.1
+github:abworks-dev/magpie-aihub#v0.2.2
 ```
 
 仓库公开，不需向插件提供 GitHub Token。服务器必须能访问 GitHub 及 Magpie 插件运行时。推理路由无需编译或新增代理监听；页面服务随插件启动，设置与只读监控在同一页面。已有验证限于 local mock、官方 CLI 隔离宿主和 Edge 合成代理；真实生产联调未验证。六平台外部接口只经公开文档/公开代码核对，不等于真实六平台实测。
@@ -16,14 +16,14 @@ github:abworks-dev/magpie-aihub#v0.2.1
 
 已核对官方 0.1.3250 的 plugin.Add 实现：Git / npm 插件按实际包名识别，添加新 ref 会替换同包名旧条目，并保留 Options、启用状态和 Provider 偏好；该操作不删除认证存储。此结论适用于原条目也是本仓库 Git 安装的情况；本地路径条目需另核对，不能笼统保证自动合并。
 
-固定旧 tag 的条目只点“更新”可能仍获取同一旧 tag。升级时应确认来源为 #v0.2.1；安装会重载共享插件宿主，影响进行中的请求和进程内会话亲和。关闭旧插件页并重新打开，改一项非秘密设置、保存、再次打开核对保留。保存设置不要求先登录 AIHub；真实模型使用才需要自己的账户或分组 Key。
+固定旧 tag 的条目只点“更新”可能仍获取同一旧 tag。升级时应确认来源为 #v0.2.2；安装会重载共享插件宿主，影响进行中的请求和进程内会话亲和。关闭旧插件页并重新打开，改一项非秘密设置、保存、再次打开核对保留。保存设置不要求先登录 AIHub；真实模型使用才需要自己的账户或分组 Key。
 
 安装后应看到插件“AIHub 自动路由”、上游 AIHub Auto / aihub-auto 及配置页。官方 Windows CLI 0.1.3250 隔离验证通过加载、合成凭据、六平台 8 个模型及三种 SDK 注册；不能据此宣布目标生产实例已通过。
 
 若由用户自己在运行 Magpie 的同一账户、同一配置环境执行 CLI，可使用：
 
 ```sh
-magpie plugin add github:abworks-dev/magpie-aihub#v0.2.1
+magpie plugin add github:abworks-dev/magpie-aihub#v0.2.2
 magpie plugin login aihub-auto 1
 magpie plugin --json
 ```

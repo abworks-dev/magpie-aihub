@@ -1,6 +1,6 @@
 # 配置与凭据
 
-插件无环境变量配置入口，无外部依赖；由 Magpie options 和 auth API 配置。固定供应商 aihub-auto、origin https://aihub.top；Responses / Chat / models base 为 /v1，原生 Gemini 为 /v1beta。见 [配置](../src/config.mjs)、[平台](../src/platforms.mjs)、[清单](../package.json)。v0.2.1 为预发布版本，真实生产联调未验证；六平台接口仅按公开代码核对，现有验证为 local mock 与 Edge 合成代理。
+插件无环境变量配置入口，无外部依赖；由 Magpie options 和 auth API 配置。固定供应商 aihub-auto、origin https://aihub.top；Responses / Chat / models base 为 /v1，原生 Gemini 为 /v1beta。见 [配置](../src/config.mjs)、[平台](../src/platforms.mjs)、[清单](../package.json)。v0.2.2 为预发布版本，真实生产联调未验证；六平台接口仅按公开代码核对，现有验证为 local mock 与 Edge 合成代理。
 
 ## 非敏感 options
 

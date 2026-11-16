@@ -2,16 +2,16 @@
 
 面向 **aihub.top 普通消费者** 的 Magpie Provider 插件。用自己的账户或分组 Key，在 Magpie 中提供一个 `aihub-auto` 上游入口，按倍率和延迟选组、保留会话线路、在首次响应前有限重试。
 
-**版本：v0.2.1（预发布）。** 当前实现覆盖 `openai`、`deepseek`、`zhipu`、`kimi`、`grok`、`gemini` 六个平台；非 OpenAI 模型使用 `platform::model` 命名空间，仅在**同平台、同模型**的分组间 failover。Gemini 可显式选择 Responses 或原生 Gemini 协议，其他平台支持 Responses / Chat Completions。外部平台接口依据公开文档与公开代码核对，**不代表六平台真实调用均已实测**。
+**版本：v0.2.2（预发布）。** 当前实现覆盖 `openai`、`deepseek`、`zhipu`、`kimi`、`grok`、`gemini` 六个平台；非 OpenAI 模型使用 `platform::model` 命名空间，仅在**同平台、同模型**的分组间 failover。Gemini 可显式选择 Responses 或原生 Gemini 协议，其他平台支持 Responses / Chat Completions。外部平台接口依据公开文档与公开代码核对，**不代表六平台真实调用均已实测**。
 
-已通过 183 项本地测试、Edge 设置页与页面内监控合成代理验证；官方 Magpie 0.1.3250 隔离检查涵盖插件加载、合成凭据登录、六平台 8 个模型与三种 SDK 注册。真实生产实例联调、真实 AIHub 账户与计费推理仍未验证。独立 MIT 实现，不复制许可不明项目代码。图标取自 [AIHub 官方站点](https://aihub.top/) 公开页面的 PNG favicon，内嵌到元数据与页面；品牌图像权利归原站点。
+已通过 185 项本地测试，并在隔离的官方 Magpie 0.1.3250 `magpie web` 实例中经真实浏览器打开：页面经插件服务代理加载、`magpie.ready` 连通、监控标签跳转到服务页并在沙箱 iframe 内读到 `/snapshot`。官方 Magpie 0.1.3250 隔离检查涵盖插件加载、合成凭据登录、六平台 8 个模型与三种 SDK 注册。真实生产实例联调、真实 AIHub 账户与计费推理仍未验证。独立 MIT 实现，不复制许可不明项目代码。图标取自 [AIHub 官方站点](https://aihub.top/) 公开页面的 PNG favicon，内嵌到元数据与页面；品牌图像权利归原站点。
 
 ## 安装
 
 在 Magpie 插件管理页添加以下固定版本：
 
 ```text
-github:abworks-dev/magpie-aihub#v0.2.1
+github:abworks-dev/magpie-aihub#v0.2.2
 ```
 
 也可使用经核对的 commit 或完整本地仓库。公开仓库无需 GitHub 私有仓库权限；运行 Magpie 的主机仍需能够访问 GitHub。无需编译；推理路由不依赖独立代理，页面与只读监控由插件自己的回环服务提供。详细步骤与限制见[安装与首次验收](documentation/installation.md)。
@@ -129,7 +129,7 @@ npm run check
 npm pack --dry-run
 ```
 
-源码为无依赖 ESM，测试使用 Node >=22 内置测试器；运行环境为 Magpie 的 Bun 插件宿主。CI 同时检查 Node、Bun 与 Windows 上的官方宿主和两项浏览器回归；v0.2.0 提交 `5795e41` 的[三个任务](https://github.com/abworks-dev/magpie-aihub/actions/runs/43917943251)均通过，v0.2.1 的验证记录见[验证记录](documentation/tests.md)。没有下载后自动执行的安装脚本。
+源码为无依赖 ESM，测试使用 Node >=22 内置测试器；运行环境为 Magpie 的 Bun 插件宿主。CI 同时检查 Node、Bun 与 Windows 上的官方宿主和两项浏览器回归；v0.2.0 提交 `5795e41` 的[三个任务](https://github.com/abworks-dev/magpie-aihub/actions/runs/43917943251)均通过，v0.2.1/v0.2.2 的验证记录见[验证记录](documentation/tests.md)。没有下载后自动执行的安装脚本。
 
 验收顺序：先导入两把同平台同模型、已限额的测试 Key → 核对命名空间与协议 → 少量真实对话 → 检查会话保持和失败场景 → 再考虑账户自动建 Key。真实模型测试会产生费用；local mock 与 Edge 合成代理不证明六平台真实接口、生产权限、费用或可用性。opc-agent 生产私有路径已被拒绝，不能通过其他路径或身份绕过。
 

@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises';
 const code = await readFile(new URL('../ui/app.js', import.meta.url), 'utf8');
 const html = await readFile(new URL('../ui/index.html', import.meta.url), 'utf8');
 
-function harness({ options = {}, failSave = false, withBridge = true, service = '', fetchImpl = null, pathname = '/_magpie/plugin/tok/index.html', token = null } = {}) {
+function harness({ options = {}, failSave = false, withBridge = true, service = '', fetchImpl = null, pathname = '/_magpie/plugin/tok/index.html', token = null, theme = undefined } = {}) {
   const nodes = new Map();
   const node = id => {
     if (!nodes.has(id)) {
@@ -19,8 +19,10 @@ function harness({ options = {}, failSave = false, withBridge = true, service = 
     return nodes.get(id);
   };
   const calls = { navigated: undefined, fetch: [] };
+  const element = { dataset: {}, style: { colorScheme: '', props: {}, setProperty(k, v) { this.props[k] = v; } } };
   const context = {
     document: {
+      documentElement: element,
       getElementById: node,
       querySelector: selector => (selector === 'meta[name="aihub-service-token"]' && token ? { content: token } : null),
     },
@@ -33,12 +35,12 @@ function harness({ options = {}, failSave = false, withBridge = true, service = 
     },
   };
   if (withBridge) context.magpie = {
-    service, ready: Promise.resolve({}), read: async () => [],
+    service, ready: Promise.resolve({}), theme, read: async () => [],
     options: { get: async () => options, set: async value => { if (failSave) throw new Error('Host save rejected'); calls.saved = value; } },
   };
   vm.runInNewContext(code, context);
   return {
-    node, calls,
+    node, calls, element,
     saved: () => calls.saved,
     clickSave: () => {
       const click = node('save-button').handlers.click;
@@ -112,6 +114,15 @@ test('a failed or missing bridge keeps the page honest', async () => {
   assert.equal(missing.node('save-button').disabled, true);
 });
 
+test('the page follows the Magpie window theme', async () => {
+  const h = harness({ theme: { dark: true, tokens: { bg: '#111111', fg: '#eeeeee', accent: '#44aaff' } } });
+  await settle(); await settle();
+  assert.equal(h.element.dataset.theme, 'dark');
+  assert.equal(h.element.style.colorScheme, 'dark');
+  assert.equal(h.element.style.props['--magpie-bg'], '#111111');
+  assert.equal(h.element.style.props['--magpie-accent'], '#44aaff');
+});
+
 test('six platforms, canonical model limits and the service port survive a save', async () => {
   const h = harness({ options: { platforms: ['gemini', 'deepseek'], monitorPort: 23123,
     models: [{ id: 'gemini-2.5-pro', platform: 'gemini', api: 'gemini', context: 100000, output: 8192 }] } });
@@ -145,9 +156,17 @@ test('the monitor tab opens the plugin service instead of a second page', async 
   const service = '_magpie/service/';
   const h = harness({ service }); await settle();
   h.clickTab('monitor');
-  assert.equal(h.calls.navigated, 'https://magpie.example/_magpie/plugin/tok/_magpie/service/');
+  assert.equal(h.calls.navigated, 'https://magpie.example/_magpie/plugin/tok/_magpie/service/#monitor');
   assert.equal(h.node('view-monitor').hidden, false);
   assert.equal(h.node('view-settings').hidden, true);
+});
+
+test('the placeholder token on the static page still opens the plugin service', async () => {
+  const h = harness({ service: '_magpie/service/', token: '__AIHUB_SERVICE_TOKEN__' });
+  await settle();
+  h.clickTab('monitor');
+  assert.equal(h.calls.navigated, 'https://magpie.example/_magpie/plugin/tok/_magpie/service/#monitor');
+  assert.equal(h.calls.fetch.length, 0, 'the placeholder is not a usable token');
 });
 
 test('on the service page the monitor reads the same-origin snapshot and renders it', async () => {

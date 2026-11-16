@@ -224,6 +224,9 @@
   function serviceToken() {
     const meta = typeof document.querySelector === 'function' ? document.querySelector('meta[name="aihub-service-token"]') : null;
     const value = meta?.content ?? meta?.getAttribute?.('content') ?? '';
+    // The placeholder is what Magpie's static copy carries: only the service
+    // replaces it, so a bare placeholder means "not served by the service".
+    if (value === '__AIHUB_SERVICE_TOKEN__') return '';
     return /^[A-Za-z0-9_-]{1,128}$/.test(value) ? value : '';
   }
 
@@ -234,7 +237,11 @@
     // static page Magpie serves has the placeholder and no connect-src.
     const served = inServicePage() || Boolean(serviceToken());
     if (service && !served) {
-      globalThis.location.replace(service.href);
+      // Open the service page on its monitor view: the reader already asked
+      // for it, and the settings tab is where that document starts.
+      const target = new URL(service.href);
+      target.hash = '#monitor';
+      globalThis.location.replace(target.href);
       return;
     }
     if (!served && !state.connected) {
@@ -418,6 +425,23 @@
     renderSnapshot();
   });
 
+  // Magpie hands the page its theme: use its tokens instead of guessing from
+  // the OS, so the page looks like the window it is drawn in.
+  function applyTheme(theme) {
+    if (!theme || typeof theme !== 'object') return;
+    const root = document.documentElement;
+    if (typeof theme.dark === 'boolean') {
+      root.dataset.theme = theme.dark ? 'dark' : 'light';
+      root.style.colorScheme = theme.dark ? 'dark' : 'light';
+    }
+    const tokens = theme.tokens && typeof theme.tokens === 'object' ? theme.tokens : {};
+    for (const [key, value] of Object.entries(tokens)) {
+      if (!/^[a-z][a-z0-9-]{0,40}$/i.test(key)) continue;
+      if (typeof value !== 'string' || value.length > 64) continue;
+      root.style.setProperty(`--magpie-${key}`, value);
+    }
+  }
+
   async function connect() {
     const bridge = globalThis.magpie;
     if (!bridge || typeof bridge.options?.get !== 'function') {
@@ -430,6 +454,8 @@
     state.bridge = bridge;
     try {
       await bounded(bridge.ready, '连接 Magpie 超时');
+      applyTheme(bridge.theme);
+      if (typeof bridge.onTheme === 'function') bridge.onTheme(applyTheme);
       const options = await bounded(bridge.options.get(), '读取插件选项超时');
       populate(optionsObject(options));
       state.connected = true;

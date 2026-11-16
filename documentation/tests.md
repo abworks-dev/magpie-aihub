@@ -2,7 +2,17 @@
 
 ## 当前证据
 
-2026-11-17 02:14–02:15 +08，本地 Windows / Node 24.22.1 对 v0.2.1 执行 `node --test`：183 项测试通过，失败、取消、跳过均为 0（含嵌套计数）。路由与账号测试使用模拟 fetch、模拟宿主和内存流；页面服务测试启动真实回环 HTTP 服务并提供合成快照。不含真实凭据或付费模型调用。`npm run check` 对入口、服务端模块与 UI 脚本逐个做语法检查，exit 0。`npm pack --dry-run` 包含 23 个预期文件、99.1 kB，未包含测试凭据或隔离宿主目录。
+2026-11-17 02:55–02:57 +08，本地 Windows / Node 24.22.1 对 v0.2.2 执行 `node --test`：185 项测试通过，失败、取消、跳过均为 0（含嵌套计数）。路由与账号测试使用模拟 fetch、模拟宿主和内存流；页面服务测试启动真实回环 HTTP 服务并提供合成快照。不含真实凭据或付费模型调用。`npm run check` 对入口、服务端模块与 UI 脚本逐个做语法检查，exit 0。`npm pack --dry-run` 包含 23 个预期文件、101.3 kB，未包含测试凭据或隔离宿主目录。
+
+## v0.2.2 真实宿主页面服务联调与主题
+
+2026-11-17 02:30–02:55 +08，用固定官方 CLI（0.1.3250，SHA256 `1991382e…2ae4`）在独立 `.local-validation/webcheck-*` 目录以 `.portable` 方式启动 `magpie web --no-open --addr 127.0.0.1:34568 --gateway`，插件以本地文件夹加入，关闭真实账号发现。HTTP 层证据：`/api/plugin-pages` 返回 `service: "_magpie/service/"`；经 `/_magpie/plugin/<token>/_magpie/service/` 取到的页面由插件服务生成（bridge 已改写为 `../bridge.js`，token 占位符已替换为 64 位随机值），代理把服务的 CSP `'self'` 展开为代理源；带 `x-aihub-service-token` 取 `/snapshot` 返回 200 且带 `Access-Control-Allow-Origin: null`，无 token 返回 403。
+
+浏览器层证据：Edge（headless，DevTools 协议驱动）打开 `?k=…` 登录后点击侧栏「AIHub 路由」，Magpie 在 `iframe[sandbox="allow-scripts"]` 中加载本页，页面显示「已连接 Magpie」，主题 token 生效（`--magpie-bg: #1a1a1e`，深色）。点击「监控」后 iframe 导航到 `_magpie/service/#monitor`，在沙箱内读取快照并渲染 KPI（账户 0 / 分组 0 / 可用分组 0 / 路由记录 0，本次未登录真实账户）与空状态提示。该检查证明真实 Magpie web 的 service 代理、bridge、token 与页面跳转链路可用，不证明生产 Cloud 部署、真实账号数据或计费推理。
+
+本轮发现并修复两处只在真实宿主暴露的问题：(1) 静态页的 token meta 是占位符 `__AIHUB_SERVICE_TOKEN__`，原校验只按字符集判断，导致「监控」把静态页误认成服务页、在 CSP `connect-src 'none'` 下直接读取失败；现显式把占位符视为无 token，并在跳转时带 `#monitor` 直接打开监控视图。(2) 页面原先只跟随 `prefers-color-scheme`，与 Magpie 窗口主题可能相反；现读取 `magpie.theme`（`dark` 与 `tokens`）写入 `documentElement` 并订阅 `onTheme`。两者各有 VM 回归（占位符跳转、主题 token）。
+
+`/snapshot` 与页面的服务端断言、图片与 vm 覆盖见下一节；两项 Edge 合成代理回归仍保留在 CI。
 
 ## v0.2.1 单页监控、页面服务与 Key 错误
 
@@ -89,7 +99,7 @@ node tooling/browser-monitor-smoke.mjs
 
 ## 后续真实验收顺序
 
-1. 在目标 Magpie 安装固定 ref `#v0.2.1`，先核对插件页面、合并后的监控标签与非敏感设置。
+1. 在目标 Magpie 安装固定 ref `#v0.2.2`，先核对插件页面、合并后的监控标签与非敏感设置。
 2. 导入两把已在 AIHub 设置有限额度、固定分组的测试 Key，关闭 `requirePassed`，填写准确倍率 / 模型。
 3. 分别验证所用平台的 Responses / Chat / Gemini 原生协议与完整历史请求。少量真实推理可能计费，应在用户授权的费用范围内执行。
 4. 核对会话保持、取消和受控故障。检查 AIHub 用量，不将模拟测试当作真实费用证明。
