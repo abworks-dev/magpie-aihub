@@ -82,7 +82,9 @@ export class Router {
     return unlock;
   }
   async fetch(input, init) {
-    const request = new Request(input, init);
+    // Reuse an existing Request when there are no overrides. Bun may retain a
+    // branch when wrapping a streaming Request, preventing source cancellation.
+    const request = input instanceof Request && init === undefined ? input : new Request(input, init);
     const url = new URL(request.url);
     if (url.origin !== ORIGIN || url.search || !['/v1/responses', '/v1/chat/completions', '/v1/models'].includes(url.pathname))
       return errorResponse('Only AIHub /v1/responses, /v1/chat/completions and /v1/models are allowed', 400);
