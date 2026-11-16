@@ -2,14 +2,14 @@
 
 面向 **aihub.top 普通消费者** 的 Magpie Provider 插件。用自己的账户或分组 Key，在 Magpie 中提供一个 `aihub-auto` 上游入口，按倍率和延迟选组、保留会话线路、在首次响应前有限重试。
 
-**状态：0.1.1 开发预览，仓库公开。** 独立实现，没有复制 aihub-auto 源码。已用官方 Magpie 0.1.3250 隔离验证插件加载、合成凭据登录与两种模型 SDK 注册；尚未在生产主机安装或使用真实 AIHub 账户联调。当前支持 AIHub **OpenAI 平台分组** 的 Responses / Chat Completions，不宣称原生 Claude/Gemini 全平台支持。
+**状态：0.1.2 开发预览，仓库公开。** 独立实现，没有复制 aihub-auto 源码。已用官方 Magpie 0.1.3250 隔离验证插件加载、合成凭据登录与两种模型 SDK 注册；0.1.2 修复沙箱中点击保存无反应的问题，加入真实浏览器回归。真实 AIHub 账户与推理尚未联调。当前支持 AIHub **OpenAI 平台分组** 的 Responses / Chat Completions，不宣称原生 Claude/Gemini 全平台支持。
 
 ## 安装
 
 在 Magpie 插件页从 Git 安装：
 
 ```text
-github:abworks-dev/magpie-aihub#v0.1.1
+github:abworks-dev/magpie-aihub#v0.1.2
 ```
 
 公开仓库无需 GitHub 私有仓库权限；运行 Magpie 的主机仍需能够访问 GitHub。也可将完整仓库放到 Magpie 容器/主机可读路径，使用本地插件安装方式。无需编译，不启动额外监听端口，不依赖独立代理服务。建议固定版本或 commit。详细步骤及失败时需要的脱敏信息见[安装与首次验收](documentation/installation.md)。

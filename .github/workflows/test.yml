@@ -34,6 +34,12 @@ jobs:
           gh release download v0.1.3250 --repo yetone/magpie --pattern magpie-cli-windows-amd64.exe --dir .local-validation
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType File .local-validation/.portable | Out-Null
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check settings save inside real browser sandbox
+        shell: pwsh
+        run: node tooling/browser-ui-smoke.mjs
       - name: Check official host with synthetic credentials
         shell: pwsh
         run: ./test/magpie-host-smoke.ps1

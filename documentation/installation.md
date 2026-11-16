@@ -5,17 +5,17 @@
 在已经登录的 Magpie 插件管理页添加 Git 来源：
 
 ```text
-github:abworks-dev/magpie-aihub#v0.1.1
+github:abworks-dev/magpie-aihub#v0.1.2
 ```
 
-仓库公开，不需要你向插件提供 GitHub Token。服务器必须能访问 GitHub 及 Magpie 所需的插件运行时。已有插件可更新或改为指定版本；不需要升级整个 Magpie、改反向代理、开放端口或重启所有服务。
+仓库公开，不需要你向插件提供 GitHub Token。服务器必须能访问 GitHub 及 Magpie 所需的插件运行时。已有插件应将原条目的 Git 来源改为新版本；不要并排添加同一插件的第二份。固定在旧 tag 的条目仅点击“更新”可能仍停留在旧版，请核对来源。插件本身无需升级整个 Magpie 或新增监听；若入口存在静态白名单，还需按实际拒绝路径单独核对。
 
 安装后应看到插件“AIHub 自动路由”、上游 `AIHub Auto` / `aihub-auto` 及插件配置页。官方 Windows CLI 0.1.3250 已确认能加载；其他平台及生产实例仍需验证。
 
 如果你自己在运行 Magpie 的同一账户、同一配置环境执行 CLI，可以使用：
 
 ```sh
-magpie plugin add github:abworks-dev/magpie-aihub#v0.1.1
+magpie plugin add github:abworks-dev/magpie-aihub#v0.1.2
 magpie plugin login aihub-auto 1
 magpie plugin --json
 ```
@@ -44,6 +44,7 @@ magpie plugin --json
 | --- | --- |
 | Git 来源安装失败 | Magpie 版本、Git spec、脱敏错误、运行实例是否能访问 GitHub |
 | 插件页面或按钮 403/404 | 操作、HTTP 方法、路径与状态码；先排除反向代理精确白名单，不直接开放所有 API |
+| 点击保存没有反应 | 0.1.1 及以前使用表单提交，可能被宿主沙箱阻止；升级至 0.1.2 后关闭旧插件页并重新打开 |
 | 插件存在但没有模型 | 是否完成认证；模型 ID/协议配置；账户模式是否尚无已建 Key |
 | 没有可用分组 | 实际倍率、允许/排除名单、模型精确 ID、手工模式是否误开检测要求 |
 | 登录需要验证码/2FA | 改用手工 Key；不在公开记录中提交账户凭据 |

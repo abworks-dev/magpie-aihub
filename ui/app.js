@@ -168,8 +168,8 @@
     dirtyNote.textContent = '有未保存的更改。';
   });
 
-  form.addEventListener('submit', async event => {
-    event.preventDefault();
+  // Magpie's iframe disables native form submission; save directly from the button.
+  saveButton.addEventListener('click', async () => {
     if (busy || !connected) return;
     let changes;
     try { changes = readForm(); }

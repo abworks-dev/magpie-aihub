@@ -2,7 +2,7 @@
 
 ## 当前证据
 
-2026-11-16，本地 Windows / Node 24.22.1 执行 `npm test`：87 项测试通过，失败、取消、跳过均为 0。包含嵌套测试计数，测试全部使用模拟 fetch、模拟宿主和内存流，不含真实凭据或付费模型调用。`npm run check` 与 `npm pack --dry-run` 也通过。
+2026-11-16，本地 Windows / Node 24.22.1 执行 `npm test`：88 项测试通过，失败、取消、跳过均为 0。包含嵌套测试计数，测试全部使用模拟 fetch、模拟宿主和内存流，不含真实凭据或付费模型调用。`npm run check` 与 `npm pack --dry-run` 也通过。
 
 GitHub Actions 在提交 `3277e4bab14f9b5c51456b96f7a1877daccd3767` 的[验证运行](https://github.com/abworks-dev/magpie-aihub/actions/runs/43859625988)中，Node 22 的语法、87 项测试与打包检查均通过；Bun 1.4.4 的 49 个顶层测试通过（与 Node 嵌套计数口径不同）。首轮 CI 发现 Bun 包装流式 Request 时源取消行为不同，已通过无覆盖参数时复用原 Request 修正并复验。本地未安装 Bun。本文件不是目标 Magpie 主机或 AIHub 线上验收报告。
 
@@ -13,6 +13,12 @@ GitHub Actions 在提交 `3277e4bab14f9b5c51456b96f7a1877daccd3767` 的[验证�
 实际通过：从本地包加载插件、识别配置页权限、读取非秘密 options、合成分组 Key 表单登录、显示已连接账户，以及为两个模型分别注册 `@ai-sdk/openai` / `@ai-sdk/openai-compatible`。初次真实检查发现 API 表单完成后还会索要额外 Key；已给两个认证方法补 `keyless: true`，复验通过，并加入回归断言。
 
 可重复脚本为 [magpie-host-smoke.ps1](../test/magpie-host-smoke.ps1)。CI 新增固定官方宿主检查，执行结果以实际 Actions 记录为准。该检查没有发送推理或真实 AIHub 登录，不覆盖 Go 网关完整请求链、浏览器渲染或生产容器部署。
+
+## 浏览器沙箱保存回归
+
+2026-11-16，用户在页面已打开后报告点击保存无反应。旧版的 VM 测试直接触发表单 submit 处理器，遗漏浏览器对沙箱表单的限制。用真实 Edge、独立临时用户目录、实际 UI 文件和模拟 bridge，在 `sandbox="allow-scripts"`、`form-action 'none'` 下复现：点击后保存调用0次，状态仍为“选项已载入”。
+
+0.1.2 移除原生 form 提交，改为普通按钮显式调用 options bridge；不放宽 iframe 或 CSP。[browser-ui-smoke.mjs](../tooling/browser-ui-smoke.mjs) 在本机回环临时端口加载隔离页面、实际点击按钮，断言恰好保存一次、输入值正确、出现成功状态且控件恢复；结束后关闭浏览器进程树和 HTTP 服务。测试不登录实际 Magpie，不调用 AIHub，不证明宿主 options 的真实持久化或完整视觉质量。21:15 +08 修复后本机 Edge 复验：`saves: 1`、`multiplier: 0.15`、模型数1、成功状态与控件恢复均通过，exit0；同一版本 Node 88项测试、语法与打包检查通过。Windows CI 执行同一浏览器回归。
 
 ## 行为 → 测试映射
 
@@ -30,7 +36,7 @@ GitHub Actions 在提交 `3277e4bab14f9b5c51456b96f7a1877daccd3767` 的[验证�
 | 创建前持久化、并发只建一次、未知结果不重建 | [account.test.mjs](../test/account.test.mjs) | 检查事件顺序和 POST 次数；不证明远端落实幂等键 |
 | 精确实例 Key 恢复、池上限、不修改其他 Key | [account.test.mjs](../test/account.test.mjs) | 模拟 Key 列表和不完整响应；没有 DELETE / PUT 路径 |
 | 插件导出、config / loader / models / chat.headers、keyless 声明 | [plugin.test.mjs](../test/plugin.test.mjs) | 模拟 hook；另用官方固定宿主核插件加载、表单认证与每模型 SDK，不覆盖完整推理 |
-| UI 配置保存、保留高级配置、bridge 缺失 / 保存失败 | [ui.test.mjs](../test/ui.test.mjs) | Node VM 与模拟 DOM / bridge；未做真实浏览器视觉验收 |
+| UI 配置保存、保留高级配置、bridge 缺失 / 保存失败 | [ui.test.mjs](../test/ui.test.mjs)、[browser-ui-smoke.mjs](../tooling/browser-ui-smoke.mjs) | VM 验校验和反馈；真实 Edge 验沙箱内点击保存，bridge 为模拟；未做生产持久化与完整视觉验收 |
 
 ## 可重复执行
 

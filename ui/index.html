@@ -17,7 +17,7 @@
     </header>
     <div id="status" class="status" role="status" aria-live="polite">正在连接 Magpie…</div>
     <noscript><p class="status error">请启用 JavaScript 并在 Magpie 中打开此页面。</p></noscript>
-    <form id="options-form" novalidate>
+    <div id="options-form" role="group" aria-label="AIHub 路由设置">
       <fieldset id="controls" disabled>
         <section class="card" aria-labelledby="routing-title">
           <div class="section-heading"><span class="step">01</span><div><h2 id="routing-title">路由偏好</h2><p>控制候选组的选择与故障切换。</p></div></div>
@@ -45,9 +45,9 @@
           <label class="field api-field"><span>默认 API</span><select id="defaultApi" name="defaultApi"><option value="responses">OpenAI Responses</option><option value="chat">Chat Completions</option></select></label>
           <label class="field model-field"><span>模型列表 <span class="optional">可选，每行一个</span></span><textarea id="models" name="models" rows="5" spellcheck="false" autocomplete="off" placeholder="model-id&#10;another-model|chat&#10;third-model|responses" aria-describedby="models-help"></textarea><small id="models-help">格式：modelID 或 modelID|responses / modelID|chat，最多 200 个。省略协议时使用默认 API。留空允许插件通过只读 /v1/models 发现模型；本页面不直接联网。</small></label>
         </section>
-        <div class="save-row"><p id="dirty-note">设置仅保存在此插件的非敏感选项中。</p><button id="save-button" type="submit">保存设置</button></div>
+        <div class="save-row"><p id="dirty-note">设置仅保存在此插件的非敏感选项中。</p><button id="save-button" type="button">保存设置</button></div>
       </fieldset>
-    </form>
+    </div>
     <aside class="footnote" aria-label="运行说明">
       <p><strong>运行方式</strong> 会话亲和信息仅保存在插件进程内存中，宿主重载后重置；保存选项可能触发宿主重载。</p>
       <p id="provider-status">供应商：aihub-auto。此桥接不提供实时供应商看板或分组监控。</p>
