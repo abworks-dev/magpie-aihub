@@ -3,10 +3,15 @@ import { PROVIDER, BASE, settings, manualBundle, configModels } from './src/conf
 import { login } from './src/api.mjs';
 import { Account, accountSaver } from './src/account.mjs';
 import { Router } from './src/router.mjs';
+import { modelDescriptor, protocolBase, protocolNpm } from './src/platforms.mjs';
+import { startMonitor } from './src/monitor.mjs';
+import { monitorSnapshot } from './src/telemetry.mjs';
 
 async function AIHubPlugin({ client }, initialOptions = {}) {
   const options = settings(initialOptions);
   const runtimes = new Map();
+  // One listener per plugin factory, never per account. The host may allocate a port.
+  if (options.monitorEnabled) await startMonitor({ port: options.monitorPort, getSnapshot: () => monitorSnapshot(runtimes, options) });
   function runtime(auth, getCurrentAuth) {
     let data;
     try { data = JSON.parse(auth?.key); } catch { throw new Error('Sign in to AIHub Auto using the plugin authentication form'); }
@@ -31,7 +36,7 @@ async function AIHubPlugin({ client }, initialOptions = {}) {
       const current = config.provider[PROVIDER] ?? {};
       config.provider[PROVIDER] = {
         ...current, name: 'AIHub Auto', npm: options.defaultApi === 'chat' ? '@ai-sdk/openai-compatible' : '@ai-sdk/openai', api: BASE,
-        options: { ...current.options, baseURL: BASE },
+        options: Object.fromEntries(Object.entries(current.options ?? {}).filter(([key]) => key !== 'baseURL')),
         models: { ...configModels(options), ...current.models },
       };
     },
@@ -67,7 +72,7 @@ async function AIHubPlugin({ client }, initialOptions = {}) {
         const auth = await getAuth();
         const current = runtime(auth, getAuth);
         return {
-          apiKey: 'magpie-aihub-internal', baseURL: BASE,
+          apiKey: 'magpie-aihub-internal',
           fetch: async (input, init) => {
             const latest = await getAuth();
             let currentInstance;
@@ -83,20 +88,24 @@ async function AIHubPlugin({ client }, initialOptions = {}) {
       models: async (provider, { auth, signal } = {}) => {
         if (options.models.length || !auth?.key) return provider.models ?? {};
         const ids = await runtime(auth).router.discover(signal);
-        return Object.fromEntries(ids.map(id => [id, {
+        return Object.fromEntries(ids.map(id => {
+          const descriptor = modelDescriptor(id, id.startsWith('gemini::') ? 'responses' : options.defaultApi);
+          return [id, {
           id, providerID: PROVIDER, name: id,
-          api: { id, url: BASE, npm: options.defaultApi === 'chat' ? '@ai-sdk/openai-compatible' : '@ai-sdk/openai' },
+          api: { id: descriptor.modelId, url: protocolBase(descriptor.api), npm: protocolNpm(descriptor.api) },
           limit: { context: 128000, output: 16384 },
           capabilities: { reasoning: false, toolcall: true, attachment: false, input: { text: true, image: false }, output: { text: true } },
           cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
-          variants: {}, headers: {}, options: {}, release_date: '', status: 'active',
-        }]));
+          variants: {}, headers: { 'x-aihub-auto-platform': descriptor.platform }, options: {}, release_date: '', status: 'active',
+        }];
+        }));
       },
     },
     'chat.headers': async (input, output) => {
       if (input.model?.providerID !== PROVIDER) return;
       output.headers ??= {};
       if (input.sessionID) output.headers['x-aihub-auto-session'] = input.sessionID;
+      if (input.model?.id) output.headers['x-aihub-auto-platform'] = modelDescriptor(input.model.id).platform;
     },
   };
 }

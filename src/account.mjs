@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { waitFor } from './async.mjs';
-import { api, list, tokenFields, normalizeHall, groupCandidate, ApiError } from './api.mjs';
+import { api, list, tokenFields, normalizeHall, groupInventory, ApiError } from './api.mjs';
 import { BASE, PROVIDER } from './config.mjs';
+import { KeyError } from './errors.mjs';
 
 export class Account {
   constructor(data, { save, fetcher = globalThis.fetch, now = Date.now } = {}) {
@@ -14,6 +15,7 @@ export class Account {
     this.queue = Promise.resolve();
     this.saveQueue = Promise.resolve();
     this.snapshot = undefined;
+    this.remoteStale = false;
     this.models = new Map();
   }
   mutate(fn, signal) {
@@ -54,18 +56,19 @@ export class Account {
     if (this.snapshot && this.now() - this.snapshot.at < o.refreshMs) return this.snapshot.rows;
     if (!this.refreshing) {
       this.refreshing = this.loadCatalogue(signal).then(rows => {
-        this.snapshot = { rows, at: this.now() }; return rows;
+        this.snapshot = { rows, at: this.now() }; this.remoteStale = false; return rows;
       }).finally(() => { this.refreshing = undefined; });
     }
     try { return await waitFor(this.refreshing, signal); }
     catch (e) {
       signal?.throwIfAborted();
+      this.remoteStale = true;
       if (this.snapshot && this.now() - this.snapshot.at <= o.maxStaleMs) return this.snapshot.rows;
       throw e;
     }
   }
   async loadCatalogue(signal) {
-    if (this.data.mode === 'manual') return this.data.keys.map(k => ({ ...k, available: undefined, rejected: [] }));
+    if (this.data.mode === 'manual') return this.directoryRows = this.data.keys.map(k => ({ ...k, platform: k.platform ?? 'openai', available: undefined, rejected: [] }));
     const [groups, rates, publicRows] = await Promise.all([
       this.call('/api/v1/groups/available', { signal }), this.call('/api/v1/groups/rates', { signal }),
       this.call('/api/v2/public/providers', { signal }).catch(e => {
@@ -75,7 +78,9 @@ export class Account {
     ]);
     if (!rates || typeof rates !== 'object' || Array.isArray(rates)) throw new Error('Unsupported AIHub account rates schema');
     const hall = normalizeHall(publicRows);
-    return list(groups).map(g => groupCandidate(g, rates, hall)).filter(Boolean);
+    const inventory = list(groups).map(g => groupInventory(g, rates, hall)).filter(Boolean);
+    this.directoryRows = inventory;
+    return inventory.filter(row => row.routeEligible);
   }
   async ownRemoteKeys(signal) {
     const out = [];
@@ -91,23 +96,23 @@ export class Account {
     return this.mutate(async () => {
       const existing = this.data.keys.find(k => k.groupId === candidate.groupId);
       if (existing) { if (this.dirty) await this.save(); return existing; }
-      if (this.data.mode !== 'managed') throw new Error('No imported key for group');
-      if (this.data.keys.length >= o.poolSize) throw new Error('Dedicated key pool is full; increase poolSize or use an existing group');
+      if (this.data.mode !== 'managed') throw new KeyError('key_not_imported', '此分组没有导入 Key，请在插件连接中导入对应分组 Key。');
+      if (this.data.keys.length >= o.poolSize) throw new KeyError('key_pool_full', '专用 Key 池已满，请增大 poolSize 或使用已有分组。');
       const name = `magpie-aihub-${this.data.instanceId.slice(0, 12)}-g${candidate.groupId}`;
       const pending = this.data.pending;
-      if (pending && pending.groupId !== candidate.groupId) throw new Error('An earlier key creation is unresolved; re-list or check AIHub before creating another');
+      if (pending && pending.groupId !== candidate.groupId) throw new KeyError('key_creation_pending', '此前创建 Key 的结果尚未确认，请先在 AIHub 检查对应记录。');
       // Only our exact instance-specific name can be recovered; unrelated keys are never adopted.
       const recover = async () => {
         const rows = await this.ownRemoteKeys(signal);
         const found = rows.filter(k => k.name === name && Number(k.group_id) === candidate.groupId && k.status === 'active');
-        if (found.length > 1) throw new Error('Duplicate dedicated keys found; resolve in AIHub before continuing');
+        if (found.length > 1) throw new KeyError('key_duplicate', '发现重复的专用 Key，请先在 AIHub 处理重复记录。');
         return found[0];
       };
       if (this.data.refresh && this.data.expires && this.data.expires <= this.now() + 30000) await this.renew(signal);
       let remote = await recover();
-      if (!remote && pending) throw new Error('Previous key creation has an unknown outcome. Inspect AIHub; no automatic re-creation.');
+      if (!remote && pending) throw new KeyError('key_creation_pending', '此前创建 Key 的结果未知，请在 AIHub 检查；插件不会重复创建。');
       if (!remote) {
-        if (!o.autoCreateKeys) throw new Error('Automatic key creation is disabled. Enable it in plugin options or import group keys.');
+        if (!o.autoCreateKeys) throw new KeyError('key_creation_disabled', '此分组尚无专用 Key。请开启自动创建分组 Key，或手工导入该分组 Key。');
         this.data.pending = { groupId: candidate.groupId, name, idempotencyKey: randomUUID() };
         await this.save();
         // One create only. Persist pending BEFORE the request, retain it on all uncertain outcomes.
@@ -118,8 +123,8 @@ export class Account {
         if (!remote?.key) remote = await recover();
       }
       if (!remote || typeof remote.key !== 'string' || !remote.key || !Number.isSafeInteger(Number(remote.id)) || Number(remote.group_id) !== candidate.groupId || (remote.name && remote.name !== name))
-        throw new Error('AIHub did not provide a complete dedicated key; check the pending creation in AIHub');
-      const key = { groupId: candidate.groupId, key: remote.key, remoteId: Number(remote.id), name, owned: true };
+        throw new KeyError('key_creation_incomplete', 'AIHub 未返回完整的专用 Key，请检查待确认的创建记录。');
+      const key = { groupId: candidate.groupId, platform: candidate.platform ?? 'openai', key: remote.key, remoteId: Number(remote.id), name, owned: true };
       this.data.keys.push(key);
       delete this.data.pending;
       await this.save();

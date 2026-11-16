@@ -42,15 +42,30 @@
         </section>
         <section class="card" aria-labelledby="models-title">
           <div class="section-heading"><span class="step">03</span><div><h2 id="models-title">模型与协议</h2><p>可自行指定模型，也可交由宿主发现。</p></div></div>
+          <div class="grid" role="group" aria-label="启用平台">
+            <label class="toggle"><input id="platform-openai" type="checkbox" checked><span>OpenAI</span></label>
+            <label class="toggle"><input id="platform-deepseek" type="checkbox" checked><span>DeepSeek</span></label>
+            <label class="toggle"><input id="platform-zhipu" type="checkbox" checked><span>智谱</span></label>
+            <label class="toggle"><input id="platform-kimi" type="checkbox" checked><span>Kimi</span></label>
+            <label class="toggle"><input id="platform-grok" type="checkbox" checked><span>Grok</span></label>
+            <label class="toggle"><input id="platform-gemini" type="checkbox" checked><span>Gemini</span></label>
+          </div>
           <label class="field api-field"><span>默认 API</span><select id="defaultApi" name="defaultApi"><option value="responses">OpenAI Responses</option><option value="chat">Chat Completions</option></select></label>
-          <label class="field model-field"><span>模型列表 <span class="optional">可选，每行一个</span></span><textarea id="models" name="models" rows="5" spellcheck="false" autocomplete="off" placeholder="model-id&#10;another-model|chat&#10;third-model|responses" aria-describedby="models-help"></textarea><small id="models-help">格式：modelID 或 modelID|responses / modelID|chat，最多 200 个。省略协议时使用默认 API。留空时，账户模式从可用分组与大厅发现模型，手工模式读取已导入 Key 的 /v1/models；发现不会建 Key 或调用推理。自动发现使用默认 API，本页面不直接联网。</small></label>
+          <label class="field model-field"><span>模型列表 <span class="optional">可选，每行一个</span></span><textarea id="models" name="models" rows="5" spellcheck="false" autocomplete="off" placeholder="model-id|responses&#10;deepseek::deepseek-chat|chat&#10;gemini::gemini-2.5-pro|gemini" aria-describedby="models-help"></textarea><small id="models-help">OpenAI 直接填模型 ID；其他平台用 platform::modelID，例如 deepseek::deepseek-chat。支持 deepseek、zhipu、kimi、grok、gemini。每行可加 |responses 或 |chat；Gemini 使用 |responses 或原生 |gemini。最多 200 个，省略协议使用默认 API；默认 chat 时 Gemini 自动发现仍使用 responses。留空时从分组与大厅发现，手工模式读取已导入 Key 的 /v1/models；发现不会建 Key 或调用推理。故障切换保持平台和模型不变。</small></label>
+        </section>
+        <section class="card" aria-labelledby="monitor-title">
+          <div class="section-heading"><span class="step">04</span><div><h2 id="monitor-title">只读分组监控</h2><p>查看六平台分组、价格、公开质量指标和路由记录。</p></div></div>
+          <label class="toggle"><input id="monitorEnabled" type="checkbox"><span>启用监控服务</span></label>
+          <label class="field"><span>本机回环端口</span><input id="monitorPort" type="number" min="1024" max="65535" value="19871"><small>默认关闭；端口需可用。保存后重新打开页面，宿主重载时启动服务。仅本机监听，通过 Magpie 的插件服务入口访问。</small></label>
+          <button id="open-monitor" type="button">打开监控</button>
+          <p>监控仅读取目录和已有路由状态，不执行推理探测或创建 Key；目录刷新可能请求 AIHub 的只读接口。缺失指标显示为 —。</p>
         </section>
         <div class="save-row"><p id="dirty-note">设置仅保存在此插件的非敏感选项中。</p><button id="save-button" type="button">保存设置</button></div>
       </fieldset>
     </div>
     <aside class="footnote" aria-label="运行说明">
       <p><strong>运行方式</strong> 会话亲和信息仅保存在插件进程内存中，宿主重载后重置；保存选项可能触发宿主重载。</p>
-      <p id="provider-status">供应商：aihub-auto。此桥接不提供实时供应商看板或分组监控。</p>
+      <p id="provider-status">供应商：aihub-auto。六平台故障转移保持同一平台和模型；只读分组监控需单独开启。</p>
       <p>本页不接收凭据，不提供登录，不发送远程分析数据。</p>
     </aside>
   </main>

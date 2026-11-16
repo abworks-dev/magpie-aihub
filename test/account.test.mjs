@@ -101,9 +101,9 @@ test('an unknown create outcome retains pending state across reload and never se
   assert.ok(durable.pending);
   assert.equal(durable.keys.length, 0);
   const reloaded = new Account(durable, { save: async () => {}, fetcher });
-  await assert.rejects(reloaded.keyFor(group, options()), /unknown outcome|unresolved|no automatic/i);
-  await assert.rejects(reloaded.keyFor(group, options()), /unknown outcome|unresolved|no automatic/i);
-  await assert.rejects(reloaded.keyFor({ ...group, groupId: 43 }, options()), /unresolved|earlier/i);
+  await assert.rejects(reloaded.keyFor(group, options()), { code: 'key_creation_pending' });
+  await assert.rejects(reloaded.keyFor(group, options()), { code: 'key_creation_pending' });
+  await assert.rejects(reloaded.keyFor({ ...group, groupId: 43 }, options()), { code: 'key_creation_pending' });
   assert.equal(posts, 1);
 });
 
@@ -154,7 +154,7 @@ test('unrelated existing remote keys are never adopted, deleted or updated', asy
       ]);
     },
   });
-  await assert.rejects(account.keyFor(group, settings()), /creation is disabled|automatic key creation/i);
+  await assert.rejects(account.keyFor(group, settings()), { code: 'key_creation_disabled' });
   assert.equal(account.data.keys.length, 0);
   assert.deepEqual(calls.map(call => call.method), ['GET']);
 });
@@ -165,7 +165,7 @@ test('automatic key creation is disabled by default and requires explicit opt-in
   const account = new Account(managed(), {
     fetcher: async (_url, init) => { if (init.method === 'POST') posts++; return json([]); },
   });
-  await assert.rejects(account.keyFor(group, settings()), /creation is disabled|automatic key creation/i);
+  await assert.rejects(account.keyFor(group, settings()), { code: 'key_creation_disabled' });
   assert.equal(posts, 0);
   assert.equal(account.data.pending, undefined);
 });

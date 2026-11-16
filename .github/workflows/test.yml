@@ -40,6 +40,9 @@ jobs:
       - name: Check settings save inside real browser sandbox
         shell: pwsh
         run: node tooling/browser-ui-smoke.mjs
+      - name: Check read-only monitor through browser proxy fixture
+        shell: pwsh
+        run: node tooling/browser-monitor-smoke.mjs
       - name: Check official host with synthetic credentials
         shell: pwsh
         run: ./test/magpie-host-smoke.ps1

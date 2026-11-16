@@ -2,9 +2,19 @@
 
 ## 当前证据
 
-2026-11-16，本地 Windows / Node 24.22.1 执行 `npm test`：115 项测试通过，失败、取消、跳过均为 0。包含嵌套测试计数，测试全部使用模拟 fetch、模拟宿主和内存流，不含真实凭据或付费模型调用。`npm run check` 与 `npm pack --dry-run` 也通过。
+2026-11-17 01:14–01:18 +08，本地 Windows / Node 24.22.1 对 v0.2.0 执行 `node --test`：180 项测试通过，失败、取消、跳过均为 0（含嵌套计数）。路由与账号测试使用模拟 fetch、模拟宿主和内存流；监控测试启动真实回环 HTTP 服务并提供合成快照。不含真实凭据或付费模型调用。`npm pack --dry-run` 包含 26 个预期文件，未包含测试凭据或隔离宿主目录；语法与差异检查另行执行。
 
 GitHub Actions 在提交 `3277e4bab14f9b5c51456b96f7a1877daccd3767` 的[验证运行](https://github.com/abworks-dev/magpie-aihub/actions/runs/43859625988)中，Node 22 的语法、87 项测试与打包检查均通过；Bun 1.4.4 的 49 个顶层测试通过（与 Node 嵌套计数口径不同）。首轮 CI 发现 Bun 包装流式 Request 时源取消行为不同，已通过无覆盖参数时复用原 Request 修正并复验。本地未安装 Bun。本文件不是目标 Magpie 主机或 AIHub 线上验收报告。
+
+## v0.2.0 六平台、Key 错误与监控
+
+六平台测试验证命名空间互不冲突，并在六组同名模型场景中断言故障转移始终保持同平台、同模型。Gemini 原生请求核对 `/v1beta` 路径、请求体和 Google Key 头；严格拒绝不支持的 query、平台和协议组合。入口回归覆盖默认 Chat 时 Gemini 自动发现仍使用 Responses。以上为合成接口行为验证，不证明线上每组实际支持这些协议。
+
+Key 错误测试验证稳定本地错误码不反射管理端响应，并覆盖创建结果不完整、同名重复、错误组、停用 Key 和重载后的 pending；未知创建不再次 POST。
+
+监控测试验证真实回环服务的 Host / Origin / 页面令牌约束、GET-only、字段白名单、匿名账号、缺失值 `null`、数组与响应体上限及端口冲突。遥测测试断言不调用建 Key 或推理；读取目录仍可能触发既有令牌刷新。2026-11-17 01:18 +08，真实 Edge 经合成 Magpie service 代理加载监控：`passed: true`、`rows: 1`、`tabs: 6`、`reads: 1`、`error: false`。这不是生产 Cloud service 授权或真实 Magpie 浏览器代理验收。
+
+同轮 Edge 设置页回归：`saves: 1`、`multiplier: 0.15`、模型数 1、成功状态及控件恢复通过。桥接为合成对象，未登录用户实例。
 
 ## 官方宿主隔离检查
 
@@ -12,7 +22,9 @@ GitHub Actions 在提交 `3277e4bab14f9b5c51456b96f7a1877daccd3767` 的[验证�
 
 实际通过：从本地包加载插件、识别配置页权限、读取非秘密 options、合成分组 Key 表单登录、显示已连接账户，以及为两个模型分别注册 `@ai-sdk/openai` / `@ai-sdk/openai-compatible`。初次真实检查发现 API 表单完成后还会索要额外 Key；已给两个认证方法补 `keyless: true`，复验通过，并加入回归断言。
 
-可重复脚本为 [magpie-host-smoke.ps1](../test/magpie-host-smoke.ps1)。CI 新增固定官方宿主检查，执行结果以实际 Actions 记录为准。该检查没有发送推理或真实 AIHub 登录，不覆盖 Go 网关完整请求链、浏览器渲染或生产容器部署。
+2026-11-17 01:12–01:13 +08，使用同一固定官方 CLI、摘要和隔离环境，对 v0.2.0 复验通过：本地插件加载、合成分组 Key 登录、六个平台共 8 个模型注册，以及 `@ai-sdk/openai`、`@ai-sdk/openai-compatible`、`@ai-sdk/google` 三种 SDK 选择。检查不设置全局 loader baseURL，模型配置各自携带协议 URL。注册成功不证明实际 SDK 生成的推理请求端到端可用。
+
+可重复脚本为 [magpie-host-smoke.ps1](../test/magpie-host-smoke.ps1)。CI 执行固定官方宿主及两个浏览器检查，结果以该版本实际 Actions 记录为准；上述旧提交 CI 成功不能替代本版 CI。所有隔离宿主检查均未发送推理或真实 AIHub 登录，不覆盖 Go 网关完整请求链、浏览器渲染或生产容器部署。
 
 ## 浏览器沙箱保存回归
 
@@ -47,6 +59,9 @@ GitHub Actions 在提交 `3277e4bab14f9b5c51456b96f7a1877daccd3767` 的[验证�
 | 创建前持久化、并发只建一次、未知结果不重建 | [account.test.mjs](../test/account.test.mjs) | 检查事件顺序和 POST 次数；不证明远端落实幂等键 |
 | 精确实例 Key 恢复、池上限、不修改其他 Key | [account.test.mjs](../test/account.test.mjs) | 模拟 Key 列表和不完整响应；没有 DELETE / PUT 路径 |
 | 插件导出、config / loader / models / chat.headers、keyless 声明 | [plugin.test.mjs](../test/plugin.test.mjs) | 模拟 hook；另用官方固定宿主核插件加载、表单认证与每模型 SDK，不覆盖完整推理 |
+| 六平台命名空间、平台内精确模型 failover、Gemini 原生协议 | [platforms.test.mjs](../test/platforms.test.mjs)、[plugin.test.mjs](../test/plugin.test.mjs) | 合成目录及出站请求断言；未进行六平台真实计费调用 |
+| 稳定 Key 错误码、管理响应脱敏、不完整创建和精确恢复 | [key-errors.test.mjs](../test/key-errors.test.mjs) | 模拟管理响应、重载和冲突，验证不重放创建 |
+| 监控 HTTP 访问约束、只读接口、白名单、缺失值与仪表盘 | [monitor.test.mjs](../test/monitor.test.mjs)、[telemetry.test.mjs](../test/telemetry.test.mjs)、[browser-monitor-smoke.mjs](../tooling/browser-monitor-smoke.mjs) | 真实回环服务 + VM + Edge 合成 service 代理；不覆盖生产 Cloud 路由 |
 | 官方品牌图像一致与摘要 | [plugin.test.mjs](../test/plugin.test.mjs) | 比对元数据与页面图像；不代替生产渲染检查 |
 | UI 配置保存、保留高级配置、bridge 缺失 / 保存失败 | [ui.test.mjs](../test/ui.test.mjs)、[browser-ui-smoke.mjs](../tooling/browser-ui-smoke.mjs) | VM 验校验和反馈；真实 Edge 验沙箱内点击保存，bridge 为模拟；未做生产持久化与完整视觉验收 |
 
@@ -65,7 +80,8 @@ npm pack --dry-run
 - 生产 Magpie 实例的安装、页面展示、浏览器密码提示和 UI bridge 保存；官方隔离 CLI 的识别 / 认证 / SDK 注册已经通过，不代表生产验收。实际会话 ID、完整 SDK 请求与 Go 网关链仍未验证。
 - Magpie 多账号上下文及认证存储的加密、CAS、备份和重载行为。
 - AIHub 真实登录 / 验证码 / 2FA、管理接口字段、模型目录、专属倍率和 Key 创建 / 列表返回完整 Key 的能力。
-- Responses 与 Chat Completions 的真实流、工具调用、长会话、取消与缓存行为。
+- 六平台的 Responses / Chat Completions、Gemini 原生协议的真实流、工具调用、长会话、取消与缓存行为。
+- 生产监控端口分配、宿主 service 代理与 Cloud 路由；默认 19871 仅是候选，未因本地临时端口检查成为已分配端口。
 - 实际费用、上游幂等、首块前重试是否产生重复计费、AIHub 后台自动改组的影响。
 - 宿主重载会清空内存亲和；多进程共享同一认证包没有并发去重保证。共享目录 / 令牌刷新仍可能受首先发起者取消影响。
 
@@ -73,7 +89,7 @@ npm pack --dry-run
 
 1. 在目标 Magpie 安装固定 commit，先核对插件页面与非敏感设置。
 2. 导入两把已在 AIHub 设置有限额度、固定分组的测试 Key，关闭 `requirePassed`，填写准确倍率 / 模型。
-3. 分别验证 Responses / Chat 与完整历史请求。少量真实推理可能计费，应在用户授权的费用范围内执行。
+3. 分别验证所用平台的 Responses / Chat / Gemini 原生协议与完整历史请求。少量真实推理可能计费，应在用户授权的费用范围内执行。
 4. 核对会话保持、取消和受控故障。检查 AIHub 用量，不将模拟测试当作真实费用证明。
 5. 账户模式先验证只读目录；如用户接受自动建 Key，再启用开关，检查专用名称、保存与恢复。没有确认远端状态时不要绕过 pending。
 

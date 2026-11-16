@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
-import { BASE, ORIGIN } from './config.mjs';
+import { ORIGIN } from './config.mjs';
+import { validPlatform, publicModelId, modelDescriptor } from './platforms.mjs';
+import { keyFailure } from './errors.mjs';
 
 const digest = text => createHash('sha256').update(text).digest('hex');
-const errorResponse = (message, status = 503) => Response.json({ error: { type: 'aihub_routing_error', message } }, { status });
+const errorResponse = (message, status = 503, code = 'routing_failed') => Response.json({ error: { type: 'aihub_routing_error', code, message } }, { status });
 
 async function boundedBody(request, limit, signal) {
   if (!request.body) throw new Error('A JSON request body is required');
@@ -41,16 +43,20 @@ export class Router {
   constructor(account, options, { fetcher = globalThis.fetch, now = Date.now } = {}) {
     this.account = account; this.o = options; this.fetcher = fetcher; this.now = now;
     this.sessions = new Map(); this.cooldown = new Map(); this.latency = new Map(); this.rejected = new Map();
-    this.locks = new Map();
+    this.locks = new Map(); this.lastRoutes = [];
+  }
+  recordRoute(candidate, model, outcome) {
+    this.lastRoutes.push({ groupId: candidate.groupId, platform: candidate.platform ?? 'openai', at: this.now(), outcome, model });
+    if (this.lastRoutes.length > 100) this.lastRoutes.splice(0, this.lastRoutes.length - 100);
   }
   eligibleGroup(c) {
     const o = this.o;
-    return !o.excludedGroups.includes(c.groupId) && (!o.allowedGroups.length || o.allowedGroups.includes(c.groupId)) &&
+    return o.platforms.includes(c.platform ?? 'openai') && !o.excludedGroups.includes(c.groupId) && (!o.allowedGroups.length || o.allowedGroups.includes(c.groupId)) &&
       c.multiplier <= o.maxMultiplier && c.available !== false && !c.blocked &&
       (!o.requirePassed || c.passed === true) && (this.cooldown.get(c.groupId) ?? 0) <= this.now();
   }
-  eligible(c, model) {
-    return this.eligibleGroup(c) && (!c.models || c.models.includes(model)) &&
+  eligible(c, model, platform = c.platform ?? 'openai') {
+    return (c.platform ?? 'openai') === platform && this.eligibleGroup(c) && (!c.models || c.models.includes(model)) &&
       !(c.rejected ?? []).includes(model) && !this.rejected.has(`${c.groupId}:${model}`);
   }
   score(c) {
@@ -88,8 +94,10 @@ export class Router {
     // branch when wrapping a streaming Request, preventing source cancellation.
     const request = input instanceof Request && init === undefined ? input : new Request(input, init);
     const url = new URL(request.url);
-    if (url.origin !== ORIGIN || url.search || !['/v1/responses', '/v1/chat/completions', '/v1/models'].includes(url.pathname))
-      return errorResponse('Only AIHub /v1/responses, /v1/chat/completions and /v1/models are allowed', 400);
+    const native = /^\/v1beta\/models\/([A-Za-z0-9_.@+-]{1,160}):(generateContent|streamGenerateContent)$/.exec(url.pathname);
+    const validQuery = native?.[2] === 'streamGenerateContent' ? url.search === '?alt=sse' || !url.search : !url.search;
+    if (url.origin !== ORIGIN || !validQuery || (!native && !['/v1/responses', '/v1/chat/completions', '/v1/models'].includes(url.pathname)))
+      return errorResponse('Only supported AIHub inference and model-discovery endpoints are allowed', 400);
     if (url.pathname === '/v1/models') {
       if (request.method !== 'GET') return errorResponse('Method not allowed', 405);
       try { return Response.json({ object: 'list', data: (await this.discover(request.signal)).map(id => ({ id, object: 'model', owned_by: 'aihub' })) }); }
@@ -107,18 +115,28 @@ export class Router {
       if (request.signal.aborted) throw request.signal.reason;
       return errorResponse(signal.aborted ? 'AIHub routing deadline exceeded' : 'Expected a JSON request within the configured body limit', signal.aborted ? 503 : 400);
     }
-    if (!body || typeof body.model !== 'string' || !body.model) { clearTimeout(budgetTimer); return errorResponse('A model ID is required', 400); }
+    let platform, model;
+    try {
+      if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error();
+      const hint = request.headers.get('x-aihub-auto-platform');
+      const supplied = native ? native[1] : body.model;
+      if (typeof supplied !== 'string' || !supplied) throw new Error();
+      const descriptor = modelDescriptor({ id: supplied, ...(hint ? { platform: hint } : native ? { platform: 'gemini' } : {}), api: native ? 'gemini' : url.pathname === '/v1/chat/completions' ? 'chat' : 'responses' });
+      platform = descriptor.platform; model = descriptor.modelId;
+      if (!validPlatform(platform) || !this.o.platforms.includes(platform) || (native && body.model !== undefined && body.model !== model)) throw new Error();
+      if (!native) { body.model = model; bytes = Buffer.from(JSON.stringify(body)); }
+    } catch { clearTimeout(budgetTimer); return errorResponse('Invalid or disabled platform/model/protocol combination', 400, 'invalid_platform_model'); }
     // Stateful server-side continuation cannot safely be replayed across provider accounts.
     // Require clients to send full history; never guess which upstream owns a response ID.
     if (body.previous_response_id || body.conversation) { clearTimeout(budgetTimer); return errorResponse('Send full conversation history; server-side previous_response_id/conversation routing is not supported', 400); }
-    const session = sessionKey(request.headers, body, url.pathname);
+    const session = sessionKey(request.headers, { ...body, model: publicModelId(platform, model) }, url.pathname);
     let unlock = () => {};
     try {
       unlock = await this.lock(session, signal);
       signal.throwIfAborted();
       this.prune();
       const catalogue = await this.account.catalogue(this.o, signal);
-      let candidates = catalogue.filter(c => this.eligible(c, body.model)).sort((a, b) => this.score(a) - this.score(b) || a.groupId - b.groupId);
+      let candidates = catalogue.filter(c => this.eligible(c, model, platform)).sort((a, b) => this.score(a) - this.score(b) || a.groupId - b.groupId);
       const sticky = session && this.sessions.get(session)?.groupId;
       if (sticky) candidates.sort((a, b) => Number(b.groupId === sticky) - Number(a.groupId === sticky));
       // A full managed pool does not create/delete keys just because market rankings move.
@@ -131,17 +149,22 @@ export class Router {
         let key;
         try {
           key = await this.account.keyFor(candidate, this.o, signal);
-        } catch { return errorResponse('Cannot prepare group key; check AIHub access, creation options and pending keys'); }
+        } catch (error) {
+          signal.throwIfAborted();
+          const failure = keyFailure(error);
+          this.recordRoute(candidate, model, failure.code);
+          return errorResponse(failure.message, 503, failure.code);
+        }
         try {
           const ids = await this.account.modelIds(key, this.o, signal);
-          if (!ids.includes(body.model)) continue;
+          if (!ids.includes(model)) continue;
         } catch {
           signal.throwIfAborted();
           this.cooldown.set(candidate.groupId, this.now() + this.o.cooldownMs);
           continue;
         }
         attempts++;
-        const headers = new Headers({ 'content-type': 'application/json', authorization: `Bearer ${key.key}` });
+        const headers = new Headers({ 'content-type': 'application/json', ...(native ? { 'x-goog-api-key': key.key } : { authorization: `Bearer ${key.key}` }) });
         // Deliberate allowlist: never leak Magpie/client credentials, cookies or internal session IDs.
         for (const name of ['accept', 'openai-beta']) if (request.headers.has(name)) headers.set(name, request.headers.get(name));
         const attempt = new AbortController();
@@ -151,8 +174,9 @@ export class Router {
         const began = this.now();
         let response, reader;
         try {
-          response = await this.fetcher(`${BASE}${url.pathname.slice(3)}`, { method: 'POST', headers, body: bytes, signal: attemptSignal, redirect: 'error' });
+          response = await this.fetcher(`${ORIGIN}${url.pathname}${url.search}`, { method: 'POST', headers, body: bytes, signal: attemptSignal, redirect: 'error' });
           if (!response.ok) {
+            this.recordRoute(candidate, model, `http_${response.status}`);
             clearTimeout(timer);
             const retry = response.status === 429 || response.status >= 500 || [401, 403].includes(response.status);
             if (retry) {
@@ -178,6 +202,7 @@ export class Router {
             this.prune();
           }
           this.cooldown.delete(candidate.groupId);
+          this.recordRoute(candidate, model, 'success');
           // Once the first byte is handed to the host, no replay is ever attempted.
           let firstPending = true;
           const stream = new ReadableStream({
@@ -191,6 +216,7 @@ export class Router {
                 this.cooldown.set(candidate.groupId, this.now() + this.o.cooldownMs);
                 if (session && this.sessions.get(session)?.groupId === candidate.groupId) this.sessions.delete(session);
                 await reader.cancel().catch(() => {});
+                this.recordRoute(candidate, model, 'stream_interrupted');
                 controller.error(new Error('AIHub stream interrupted; request was not replayed'));
               }
             },
@@ -203,6 +229,7 @@ export class Router {
           clearTimeout(timer);
           attempt.abort();
           await reader?.cancel().catch(() => {});
+          this.recordRoute(candidate, model, 'connection_failed');
           if (signal.aborted) signal.throwIfAborted();
           this.cooldown.set(candidate.groupId, this.now() + this.o.cooldownMs);
           if (session) this.sessions.delete(session);
@@ -221,7 +248,9 @@ export class Router {
     const ids = new Set();
     if (this.account.data.mode !== 'managed') {
       for (const key of this.account.data.keys.slice(0, this.o.poolSize)) {
-        for (const id of await this.account.modelIds(key, this.o, signal)) ids.add(id);
+        const platform = key.platform ?? 'openai';
+        if (!this.o.platforms.includes(platform)) continue;
+        for (const id of await this.account.modelIds(key, this.o, signal)) ids.add(publicModelId(platform, id));
       }
       return [...ids].sort();
     }
@@ -238,7 +267,7 @@ export class Router {
       const advertised = candidate.advertisedModels?.length ? candidate.advertisedModels : candidate.models;
       if (advertised !== undefined) {
         evidence = true;
-        for (const id of advertised) if (this.eligible(candidate, id)) ids.add(id);
+        for (const id of advertised) if (this.eligible(candidate, id)) ids.add(publicModelId(candidate.platform ?? 'openai', id));
       }
     }
     // Only dedicated keys already stored for still-permitted catalogue groups
@@ -249,7 +278,7 @@ export class Router {
       try {
         const models = await this.account.modelIds(key, this.o, signal);
         evidence = true;
-        for (const id of models) if (this.eligible(candidate, id)) ids.add(id);
+        for (const id of models) if (this.eligible(candidate, id)) ids.add(publicModelId(candidate.platform ?? 'openai', id));
       } catch {
         signal?.throwIfAborted();
         // Valid catalogue advertisements remain useful if a dedicated key expired.

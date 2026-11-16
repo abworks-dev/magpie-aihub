@@ -1,3 +1,5 @@
+import { PLATFORMS, validPlatform, modelDescriptor, protocolBase, protocolNpm } from './platforms.mjs';
+
 export const PROVIDER = 'aihub-auto';
 export const ORIGIN = 'https://aihub.top';
 export const BASE = `${ORIGIN}/v1`;
@@ -9,6 +11,7 @@ const defaults = {
   maxSessions: 5000, maxBodyBytes: 20 * 1024 * 1024,
   excludedGroups: [], allowedGroups: [], requirePassed: false,
   defaultApi: 'responses', models: [], autoCreateKeys: false,
+  platforms: [...PLATFORMS], monitorEnabled: false, monitorPort: 19871,
 };
 
 export function settings(raw = {}) {
@@ -22,7 +25,7 @@ export function settings(raw = {}) {
     refreshMs: [10_000, 3_600_000], maxStaleMs: [10_000, 3_600_000],
     firstByteTimeoutMs: [10, 120_000], totalTimeoutMs: [10, 300_000],
     cooldownMs: [10, 3_600_000], sessionTtlMs: [1000, 604_800_000],
-    maxSessions: [1, 50_000], maxBodyBytes: [1024, 50 * 1024 * 1024],
+    maxSessions: [1, 50_000], maxBodyBytes: [1024, 50 * 1024 * 1024], monitorPort: [1024, 65535],
   };
   for (const [key, [min, max]] of Object.entries(numbers)) {
     if (typeof o[key] !== 'number' || !Number.isFinite(o[key]) || o[key] < min || o[key] > max)
@@ -31,15 +34,15 @@ export function settings(raw = {}) {
   }
   if (!['economy', 'balanced', 'speed'].includes(o.strategy)) throw new Error('Invalid strategy');
   if (!['responses', 'chat'].includes(o.defaultApi)) throw new Error('Invalid defaultApi');
-  if (typeof o.requirePassed !== 'boolean' || typeof o.autoCreateKeys !== 'boolean') throw new Error('Boolean option expected');
+  if ([o.requirePassed, o.autoCreateKeys, o.monitorEnabled].some(v => typeof v !== 'boolean')) throw new Error('Boolean option expected');
+  if (!Array.isArray(o.platforms) || !o.platforms.length || !o.platforms.every(validPlatform) || new Set(o.platforms).size !== o.platforms.length) throw new Error('Invalid platforms');
+  o.platforms = [...o.platforms];
   for (const key of ['excludedGroups', 'allowedGroups']) {
     if (!Array.isArray(o[key]) || !o[key].every(id => Number.isSafeInteger(id) && id > 0)) throw new Error(`Invalid ${key}`);
   }
   if (!Array.isArray(o.models) || o.models.length > 200) throw new Error('models must be an array of at most 200 entries');
   o.models = o.models.map(m => {
-    if (typeof m === 'string') m = { id: m };
-    if (!m || typeof m.id !== 'string' || !/^[A-Za-z0-9_./:@+-]{1,160}$/.test(m.id)) throw new Error('Invalid model id');
-    if (m.api && !['responses', 'chat'].includes(m.api)) throw new Error('Invalid model api');
+    m = modelDescriptor(m, o.defaultApi);
     for (const key of ['context', 'output']) if (m[key] !== undefined && (!Number.isSafeInteger(m[key]) || m[key] < 1)) throw new Error(`Invalid model ${key}`);
     return { ...m, api: m.api ?? o.defaultApi };
   });
@@ -56,7 +59,9 @@ export function manualBundle(text) {
       throw new Error('Each group needs a positive groupId and a key');
     if (typeof r.multiplier !== 'number' || !Number.isFinite(r.multiplier) || r.multiplier < 0) throw new Error('Each group needs its actual multiplier');
     if (r.models !== undefined && (!Array.isArray(r.models) || !r.models.every(m => typeof m === 'string'))) throw new Error('Invalid group models');
-    return { groupId: r.groupId, key: r.key.trim(), multiplier: r.multiplier, models: r.models, owned: false };
+    const platform = r.platform ?? 'openai';
+    if (!validPlatform(platform)) throw new Error('Invalid group platform');
+    return { groupId: r.groupId, key: r.key.trim(), platform, multiplier: r.multiplier, models: r.models, owned: false };
   });
   if (new Set(keys.map(k => k.groupId)).size !== keys.length) throw new Error('Duplicate groupId');
   return keys;
@@ -64,8 +69,9 @@ export function manualBundle(text) {
 
 export function configModels(o) {
   return Object.fromEntries(o.models.map(m => [m.id, {
-    id: m.id, name: m.id,
-    provider: { npm: m.api === 'chat' ? '@ai-sdk/openai-compatible' : '@ai-sdk/openai', api: BASE },
+    id: m.modelId, name: m.id,
+    provider: { npm: protocolNpm(m.api), api: protocolBase(m.api) },
+    headers: { 'x-aihub-auto-platform': m.platform },
     limit: { context: m.context ?? 128000, output: m.output ?? 16384 },
     tool_call: true,
   }]));

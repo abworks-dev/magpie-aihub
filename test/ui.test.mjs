@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 
 const code = await readFile(new URL('../ui/app.js', import.meta.url), 'utf8');
 const html = await readFile(new URL('../ui/index.html', import.meta.url), 'utf8');
-function harness(options = {}, failSave = false, withBridge = true) {
+function harness(options = {}, failSave = false, withBridge = true, service = '') {
   const nodes = new Map();
   const node = id => {
     if (!nodes.has(id)) nodes.set(id, { value: '', textContent: '', checked: false, attrs: {}, handlers: {},
@@ -14,14 +14,16 @@ function harness(options = {}, failSave = false, withBridge = true) {
     });
     return nodes.get(id);
   };
-  let saved;
-  const context = { document: { getElementById: node }, setTimeout, clearTimeout, console };
-  if (withBridge) context.magpie = { ready: Promise.resolve(), read: async () => [], options: {
+  let saved, navigated;
+  const context = { document: { getElementById: node }, setTimeout, clearTimeout, console, URL,
+    location: { href: 'https://magpie.example/plugin/page', replace: url => { navigated = url; } } };
+  if (withBridge) context.magpie = { service, ready: Promise.resolve(), read: async () => [], options: {
     get: async () => options,
     set: async value => { if (failSave) throw new Error('Host save rejected'); saved = value; },
   } };
   vm.runInNewContext(code, context);
-  return { node, saved: () => saved, clickSave: () => {
+  return { node, saved: () => saved, navigated: () => navigated,
+    clickMonitor: () => node('open-monitor').handlers.click(), clickSave: () => {
     const click = node('save-button').handlers.click;
     assert.equal(typeof click, 'function', 'the visible Save button must handle clicks directly');
     return click({ type: 'click', target: node('save-button') });
@@ -71,4 +73,44 @@ test('UI recovers controls after save failure and explains missing bridge', asyn
   assert.match(h.node('status').textContent, /保存未确认/);
   const missing = harness({}, false, false);
   assert.match(missing.node('status').textContent, /未找到 Magpie/);
+});
+
+test('UI preserves six-platform settings and canonical model limits through save', async () => {
+  const h = harness({ platforms: ['gemini', 'deepseek'], monitorEnabled: true, monitorPort: 23123,
+    models: [{ id: 'gemini-2.5-pro', platform: 'gemini', api: 'gemini', context: 100000, output: 8192 }] });
+  await settle();
+  assert.equal(h.node('models').value, 'gemini::gemini-2.5-pro|gemini');
+  assert.equal(h.node('platform-openai').checked, false);
+  h.node('models').value += '\ndeepseek::deepseek-chat|chat';
+  await h.clickSave();
+  assert.ok(h.saved(), h.node('status').textContent);
+  assert.deepEqual(Array.from(h.saved().platforms), ['deepseek', 'gemini']);
+  assert.equal(h.saved().monitorEnabled, true);
+  assert.equal(h.saved().monitorPort, 23123);
+  assert.equal(h.saved().models[0].context, 100000);
+  assert.equal(h.saved().models[0].output, 8192);
+  assert.equal(h.saved().models[1].id, 'deepseek::deepseek-chat');
+});
+
+test('UI rejects cross-platform protocols and empty platform selection', async () => {
+  for (const value of ['gemini::model|chat', 'deepseek::model|gemini', 'unknown::model|responses']) {
+    const h = harness(); await settle(); h.node('models').value = value;
+    await h.clickSave(); assert.equal(h.saved(), undefined, value);
+    assert.equal(h.node('models').attrs['aria-invalid'], 'true');
+  }
+  const h = harness(); await settle();
+  for (const platform of ['openai', 'deepseek', 'zhipu', 'kimi', 'grok', 'gemini']) h.node(`platform-${platform}`).checked = false;
+  await h.clickSave(); assert.equal(h.saved(), undefined);
+});
+
+test('monitor entry uses service bridge only when enabled in saved options', async () => {
+  const service = '/_magpie/plugin/token/_magpie/service/';
+  const h = harness({ monitorEnabled: true }, false, true, service); await settle();
+  h.clickMonitor(); assert.equal(h.navigated(), `https://magpie.example${service}`);
+  const disabled = harness({}, false, true, service); await settle();
+  disabled.node('monitorEnabled').checked = true; disabled.clickMonitor();
+  assert.equal(disabled.navigated(), undefined);
+  assert.match(disabled.node('status').textContent, /保存/);
+  const unavailable = harness({ monitorEnabled: true }); await settle(); unavailable.clickMonitor();
+  assert.equal(unavailable.navigated(), undefined); assert.match(unavailable.node('status').textContent, /服务入口/);
 });

@@ -1,4 +1,5 @@
 import { ORIGIN } from './config.mjs';
+import { validPlatform } from './platforms.mjs';
 
 export class ApiError extends Error {
   constructor(status, path) {
@@ -71,7 +72,14 @@ export function normalizeHall(data) {
     return [[id, {
       id, platform: r.platform, available: typeof r.available === 'boolean' ? r.available : undefined,
       visible: r.visible_in_hall !== false, blocked: blocked || textBlocked,
-      passed: detection.status === 'passed', multiplier: numeric(r.rate_multiplier),
+      passed: detection.status === 'passed' ? true : blocked || textBlocked ? false : null, multiplier: numeric(r.rate_multiplier),
+      name: typeof r.name === 'string' ? r.name : undefined,
+      metrics: {
+        successRate: numeric(r.success_rates?.['6h'] ?? r.probe_success_rate_6h) ?? null,
+        tps: numeric(r.summary_tps ?? r.output_tps) ?? null,
+        cacheHitRate: r.range_cache?.ready === true && r.range_cache?.stale === false ? numeric(r.range_cache.cache_hit_rate) ?? null : null,
+        realPrice: r.range_cache?.ready === true && r.range_cache?.stale === false ? numeric(r.range_cache.real_price) ?? null : null,
+      },
       latency: latency > 0 ? latency : undefined,
       advertisedModels: Array.isArray(r.model_cards)
         ? [...new Set(r.model_cards.filter(m => validModelId(m?.model)).map(m => m.model))] : undefined,
@@ -81,15 +89,21 @@ export function normalizeHall(data) {
   }));
 }
 
-export function groupCandidate(group, rates, hall) {
+export function groupInventory(group, rates, hall) {
   const id = Number(group.id);
+  if (!Number.isSafeInteger(id) || id < 1 || !validPlatform(group.platform)) return undefined;
   const h = hall.get(id);
-  if (!Number.isSafeInteger(id) || id < 1 || group.status !== 'active' || group.platform !== 'openai') return undefined;
-  // The catalogue alone is insufficient evidence that a supplier is still published.
-  if (!h || !h.visible || h.blocked || (h.platform && h.platform !== 'openai')) return undefined;
-  const override = Object.hasOwn(rates, String(id)) ? numeric(rates[id]) : undefined;
-  if (Object.hasOwn(rates, String(id)) && override === undefined) return undefined;
-  const multiplier = override ?? numeric(group.rate_multiplier) ?? h.multiplier;
-  if (multiplier === undefined || multiplier < 0) return undefined;
-  return { ...h, groupId: id, multiplier, models: modelRestriction(group.models_list_config) };
+  const hasOverride = Object.hasOwn(rates, String(id));
+  const override = hasOverride ? numeric(rates[id]) : undefined;
+  const multiplier = hasOverride ? override : numeric(group.rate_multiplier) ?? h?.multiplier;
+  // Keep rejected inventory visible without allowing it into the routing pool.
+  const routeEligible = group.status === 'active' && Boolean(h?.visible) && !h.blocked
+    && (!h.platform || h.platform === group.platform) && multiplier !== undefined && multiplier >= 0;
+  return { ...h, platform: group.platform, name: h?.name ?? group.name, groupId: id, multiplier,
+    models: modelRestriction(group.models_list_config), routeEligible };
+}
+
+export function groupCandidate(group, rates, hall) {
+  const row = groupInventory(group, rates, hall);
+  return row?.routeEligible ? row : undefined;
 }

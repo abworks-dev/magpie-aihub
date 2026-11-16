@@ -1,60 +1,68 @@
 # 配置与凭据
 
-插件没有环境变量配置入口，也未声明外部依赖；配置由 Magpie 插件 options 和 auth API 提供。固定供应商 `aihub-auto`，固定 origin `https://aihub.top`，API base 为 `https://aihub.top/v1`。见 [配置源](../src/config.mjs)、[清单](../package.json)。
+插件无环境变量配置入口，无外部依赖；由 Magpie options 和 auth API 配置。固定供应商 aihub-auto、origin https://aihub.top；Responses / Chat / models base 为 /v1，原生 Gemini 为 /v1beta。见 [配置](../src/config.mjs)、[平台](../src/platforms.mjs)、[清单](../package.json)。v0.2.0 为预发布版本，真实生产联调未验证；六平台接口仅按公开代码核对，现有验证为 local mock 与 Edge 合成桥接。
 
 ## 非敏感 options
 
-全部由 [settings](../src/config.mjs) 在服务端校验，未知键拒绝；UI 仅保存识别的非敏感键。以下参数均为当前插件作用域，修改 / 恢复通过宿主设置页，可能重载插件。不是环境变量。
+全部由 [settings](../src/config.mjs) 服务端校验，未知键拒绝；[UI](../ui/app.js) 仅保存识别的非敏感键。参数作用于当前插件，经宿主设置页修改 / 恢复，可能重载插件；不是环境变量。
 
-| Name | 默认值 / 合法范围 | used-by / 客户端或服务端 | 风险与变更意义 |
+| Name | 默认值 / 合法范围 | used-by / 作用域 | 风险与变更意义 |
 | --- | --- | --- | --- |
-| maxMultiplier | 0.16；0–100 有限数 | UI + Router | 倍率筛选上限，0 仅免费组；名义阈值，不是金额预算 / 远端 Key 配额 |
-| strategy | balanced；economy / balanced / speed | UI + Router | 分别按倍率、倍率×(1+min(ms,60000)/10000)、延迟排序；未知延迟取 30000ms |
+| platforms | [openai,deepseek,zhipu,kimi,grok,gemini]；支持平台的非空、无重复数组 | UI + 入口 / Router | 限制启用平台；同平台同模型 failover，不跨平台 |
+| maxMultiplier | 0.16；0–100 有限数 | UI + Router | 名义倍率上限，0 仅免费组；不是金额预算 / Key 配额 |
+| strategy | balanced；economy / balanced / speed | UI + Router | 按倍率、倍率×(1+min(ms,60000)/10000)、延迟排序；未知延迟取 30000ms |
 | maxAttempts | 3；整数 1–5 | UI + Router | 推理发送次数含首次；Key / 模型读取不计入；首块前切换可能重复计费 |
-| poolSize | 4；整数 1–8 | UI + Account / Router | managed 已保存 Key 数量上限；池满不自动换 Key / 删 Key；managed 发现不受是否已有 Key 限制；已有 Key 补充最多读取 N 个 |
+| poolSize | 4；整数 1–8 | UI + Account / Router | managed 保存 Key 上限，池满不换/删 Key；managed 发现不要求已有 Key，已有 Key 补充最多读取 N 个 |
 | excludedGroups | []；正安全整数数组 | UI + Router | 排除优先 |
 | allowedGroups | []；正安全整数数组 | UI + Router | 空数组不额外限组，仍受其他筛选 |
-| requirePassed | false；boolean | UI + Router | 要求大厅检测 passed=true；manual 没有该证据，开启会排除全部手工组 |
-| autoCreateKeys | false；boolean | UI + Account | 用户主动开启才可 POST 创建；关闭不撤销已建 Key |
-| defaultApi | responses；responses / chat | UI + 入口 / 配置 | 选择宿主适配协议，不转换请求语义 |
-| models | []；最多 200 项且 ID 唯一 | UI + 入口 / 配置 | 字符串或 `{id, api?, context?, output?}`；ID 1–160 个允许字符；api 同上；context / output 为正安全整数。显式配置优先；空列表 managed 从账号目录/大厅发现、manual 读取已有 Key；不证明远端推理可用 |
-| refreshMs | 60000；整数 10000–3600000ms | 服务端，UI 保留 | 目录 / 模型缓存新鲜期；按使用惰性刷新，不是轮询任务 |
-| maxStaleMs | 600000；整数 10000–3600000ms | 服务端，UI 保留 | 目录刷新失败可接受的快照年龄；取消等待时不回退；不保证状态仍有效 |
-| firstByteTimeoutMs | 30000；整数 10–120000ms | 服务端，UI 保留 | 每次推理直到响应首块的等待；超时可换组 |
-| totalTimeoutMs | 90000；整数 10–300000ms | 服务端，UI 保留 | 缓冲 / 排队 / 目录 / 首块前的总期限；body reader 与等待可取消；首块后清除，不限制完整流时长 |
-| cooldownMs | 30000；整数 10–3600000ms | 服务端，UI 保留 | 失败组冷却下限；模型列表读取失败也会冷却；推理 Retry-After 可延长 |
-| sessionTtlMs | 86400000；整数 1000–604800000ms | 服务端，UI 保留 | 内存亲和生存期；重载丢失 |
-| maxSessions | 5000；整数 1–50000 | 服务端，UI 保留 | 内存亲和条目限制；超限移除最早插入项 |
-| maxBodyBytes | 20971520；整数 1024–52428800 字节 | 服务端，UI 保留 | 首块前重试缓冲上限；请求历史保留在进程内存 |
+| requirePassed | false；boolean | UI + Router | 要求大厅 passed=true；manual 缺该证据，开启会排除全部手工组 |
+| autoCreateKeys | false；boolean | UI + Account | 主动开启才可 POST 创建；关闭不撤销已有 Key |
+| defaultApi | responses；responses / chat | UI + 入口 | 宿主默认适配协议，不转换请求语义；Gemini 不支持 chat，原生须逐模型选择 |
+| models | []；最多 200 项且公共 ID 唯一 | UI + 入口 | 字符串或 {id,platform?,api?,context?,output?}；原始 ID 1–160 个允许字符；非 OpenAI namespace 或显式 platform，二者须一致；api 为 responses / chat / gemini，Gemini 仅 responses / gemini，其余 responses / chat；context / output 正安全整数。显式配置优先，空列表发现，不证明推理可用 |
+| monitorEnabled | false；boolean | UI + 入口 / page.service | 可选本地只读监听；GET 可读取远端目录并刷新/保存令牌，不推理/建 Key |
+| monitorPort | 19871；整数 1024–65535 | UI + 入口 / page.service | 仅默认候选，尚未生产分配或确认可用；需核对宿主端口与服务桥接 |
+| refreshMs | 60000；整数 10000–3600000ms | 服务端，UI 保留 | 目录 / 模型缓存新鲜期，惰性刷新，不是轮询 |
+| maxStaleMs | 600000；整数 10000–3600000ms | 服务端，UI 保留 | 刷新失败可用快照年龄，取消不回退，不保证状态有效 |
+| firstByteTimeoutMs | 30000；整数 10–120000ms | 服务端，UI 保留 | 单次推理首块等待，超时可同平台同模型换组 |
+| totalTimeoutMs | 90000；整数 10–300000ms | 服务端，UI 保留 | 缓冲/排队/目录/首块前总期限；可取消，首块后清除，不限完整流时长 |
+| cooldownMs | 30000；整数 10–3600000ms | 服务端，UI 保留 | 失败组冷却下限，模型列表失败也冷却，Retry-After 可延长 |
+| sessionTtlMs | 86400000；整数 1000–604800000ms | 服务端，UI 保留 | 内存亲和 TTL，重载丢失 |
+| maxSessions | 5000；整数 1–50000 | 服务端，UI 保留 | 亲和条目上限，移除最早插入项 |
+| maxBodyBytes | 20971520；整数 1024–52428800 字节 | 服务端，UI 保留 | 首块前重试缓冲上限，请求历史留在进程内存 |
 
-UI 的模型编辑形式是 `modelID` 或 `modelID|api`；保存会保留同 ID 已有的合法 context / output。未指定的配置模型默认 context=128000、output=16384；动态发现模型也用这组占位值，其 cost=0 不构成免费声明。见 [模型配置](../src/config.mjs)、[动态发现](../index.mjs)、[UI 保留逻辑](../ui/app.js)。
+模型编辑形式为 modelID 或 modelID|api，例如 deepseek::MODEL_ID|chat、gemini::MODEL_ID|gemini。OpenAI ID 保持原值；非 OpenAI 对外用 platform::model，上游前剥离命名空间。保存保留同 ID 已有合法 context / output；默认 context=128000、output=16384，动态模型也用这组占位值，cost=0 不构成免费声明。见 [模型](../src/config.mjs)、[发现](../index.mjs)、[UI](../ui/app.js)。
 
 ## 认证包、敏感值与内存状态
 
-来源均在宿主认证流程，保存位置是 Magpie auth API 的 `type: api`、`key: JSON.stringify(data)`，metadata 包含 identity 邮箱。不是普通 options，也不是本仓库中的凭据文件；宿主存储是否加密、备份是否带凭据均依赖宿主，未经验证。后续保存先比对当前 instanceId；宿主无 CAS，检查后重连仍有竞态。见 [auth 方法](../index.mjs)、[accountSaver](../src/account.mjs)。
+凭据来自宿主认证流程，保存到 auth API 的 type:api、key:JSON.stringify(data)，metadata 包含 identity 邮箱。不是普通 options / 仓库凭据文件；底层加密、备份取决于宿主，未经验证。保存前比对 instanceId；宿主无 CAS，检查后重连仍有竞态。见 [auth](../index.mjs)、[accountSaver](../src/account.mjs)。
 
 | Name | used-by / scope / source | 轮换 / 清理 | 风险 |
 | --- | --- | --- | --- |
-| 登录 email / password | 服务端登录；用户在宿主认证表单提交 | 密码在 AIHub 修改；仅用于本次 POST，插件不保存密码 | 邮箱成为 identity；密码仍须经过宿主表单和 AIHub 传输路径 |
-| version / mode / instanceId / identity | 服务端；授权生成 version=1、manual / managed、UUID、邮箱或导入标签；写 auth 包 | 重新授权生成新实例；核对旧专用 Key | instanceId 影响恢复名称与旧连接检查，不是权限 claim；identity 是个人信息 |
-| access / refresh / expires | 服务端 managed；AIHub 登录 / refresh 返回；写 auth 包 | 管理 GET 遇 401 按需刷新；准备新组 Key 时有 refresh 且已知 expires 在 30 秒内则先刷新；失效重新登录 | 未知 expires 不预判；创建 POST 遇 401 保留 pending 并停止，不重试；无定时刷新 |
-| keys[].key / groupId | 服务端；导入或专用 Key 创建 / 恢复；写 auth 包 | 在 AIHub 人工撤销并重新导入 / 授权；插件不自动删除 | Key 可发推理，可能计费；导入 Key `owned: false` |
-| keys[].multiplier / models | 服务端 manual；用户导入声明 | 人工核对、重新导入 | 不读取账号倍率或检测监控；错误声明可能突破用户实际成本预期 |
-| keys[].remoteId / name / owned | 服务端 managed；专用 Key 响应；写 auth 包 | 到 AIHub 人工核对 / 撤销 | 名称仅恢复当前实例 Key；不构成远端所有权证明 |
-| pending.groupId / name / idempotencyKey | 服务端 managed；创建前生成并先写 auth 包 | 未知结果须核对 AIHub；恢复唯一精确 Key 后清除 | 未解决时阻止盲目重建；不保证 AIHub 已实现幂等语义 |
-| dirty / saveRevision / saveQueue | 服务端内存；每次认证保存递增代次、串行持久化 | 保存成功仅清除同代 dirty；失败保留 dirty | 防止旧成功掩盖新失败；不提供宿主 CAS |
-| snapshot / models / sessions / cooldown / latency / locks | 服务端进程内存；目录 / 模型读取、请求和响应更新 | 到期惰性清理或重载消失 | 无多进程共享保证；亲和丢失后可换组 |
-| x-aihub-auto-session / prompt_cache_key | 宿主请求 → Router 会话哈希 | 随亲和 TTL / 重载清理 | 内部 session 头不传给 AIHub；请求 JSON 原样转发，prompt_cache_key 仍在 body 中 |
-| `magpie-aihub-internal` | loader 返回宿主的固定占位 apiKey | 无需轮换 | 不是真实 Key；出站 Authorization 被真实分组 Key 替换 |
+| 登录 email / password | 服务端；宿主认证表单提交 | 密码在 AIHub 修改，仅本次 POST，插件不保存 | 邮箱成为 identity；经过宿主表单和 AIHub 传输 |
+| version / mode / instanceId / identity | 授权生成 version=1、manual / managed、UUID、邮箱或导入标签；auth 包 | 重新授权新实例，核对旧专用 Key | instanceId 用于恢复名与旧连接检查，不是权限 claim；identity 为个人信息 |
+| access / refresh / expires | managed；登录 / refresh 返回，写 auth | GET 401 按需刷新；准备新组 Key，有 refresh 且已知 expires 在 30 秒内先刷新 | 未知 expires 不预判；创建 POST 401 保留 pending 停止；无定时刷新 |
+| keys[].key / groupId / platform | 导入或专用 Key 创建/恢复，写 auth | AIHub 人工撤销，再导入/授权 | Key 可计费；导入 owned:false；缺 platform 兼容旧包为 openai，平台需与组一致 |
+| keys[].multiplier / models | manual 用户声明 | 人工核对、重新导入；models 为原始上游 ID | 不读取账号倍率或检测状态；错误声明影响成本预期 |
+| keys[].remoteId / name / owned | managed 专用 Key 响应，写 auth | AIHub 人工核对/撤销 | 名称只恢复当前实例，不构成远端所有权证明 |
+| pending.groupId / platform / name / idempotencyKey | managed 创建前生成，先写 auth | 核对未知结果，恢复唯一精确 Key 后清除 | 阻止盲目重建，不保证远端实现幂等 |
+| dirty / saveRevision / saveQueue | 内存，认证每次保存递增并串行 | 成功仅清同代 dirty，失败保留 | 防旧成功掩盖新失败，无宿主 CAS |
+| snapshot / models / sessions / cooldown / latency / locks / lastRoutes | 内存；目录、请求与响应更新 | 惰性清理 / 重载消失；最近路由上限 100 条 | 无跨进程共享，不是持久审计；亲和丢失后可换组 |
+| x-aihub-auto-session / prompt_cache_key | 宿主请求 → 会话哈希 | 亲和 TTL / 重载清理 | session 头不外传；prompt_cache_key 仍在 body |
+| x-aihub-auto-platform | 插件模型配置 → Router | 请求级 | 平台须与 namespace / 协议匹配，内部头不外传 |
+| magpie-aihub-internal | loader 的固定占位 apiKey | 无需轮换 | 不是真 Key，出站改用分组 Bearer / 原生 Gemini x-goog-api-key |
+| 监控 VIEW_TOKEN | 随进程随机生成，只用于受限 loopback 快照访问 | 重载重新生成，不写 options/auth | 不是 AIHub Key；不作为公网身份认证保证 |
 
-静态 [UI 代码](../ui/app.js) 和 [页面](../ui/index.html) 不包含真实密钥，不从 auth 包取密钥，也不提交登录凭据。UI bridge 可读取 options，因此不得将秘密写入 options。服务端拒绝未知 option 名称，并提示秘密应进入认证表单；这不等于宿主提供了加密保证。
+静态 [UI](../ui/app.js) 和 [页面](../ui/index.html) 无真实密钥，不读取 auth 或提交登录凭据；bridge 能读 options，不能把秘密放入 options。服务端拒绝未知名称并提示认证表单，不等于宿主有加密保证。
+
+监控快照只输出脱敏白名单字段；成功率/TPS/缓存/价格等缺失、未就绪指标 null，不用 0 冒充。目录错误为安全 code，不泄漏原始管理错误；Key 错误使用稳定 code，详见 [错误处理](automation.md#可选监控与-key-错误)。见 [快照](../src/telemetry.mjs)、[服务](../src/monitor.mjs)、[Key 错误](../src/errors.mjs)。
 
 ## 上线前核对
 
-- 在目标 Magpie 主机核实认证存储、备份与加密方式；本次未做真实主机 / 账号验证。
-- 用自己的账号 / Key 核对 AIHub API 契约、权限、模型可用性和实际倍率；手工 multiplier 必须自行维护。
-- 检查 `autoCreateKeys` 保持关闭，或明确接受其创建副作用；对 pending 先核对远端，不盲目重新授权以绕开未知结果。
-- 需要金额限制时在 AIHub 核实并自行设置；本插件的倍率上限和池大小不能充当费用封顶。
-- 确认完整历史请求、首块前重试可能重复计费、重载丢失亲和这些条件适合调用方。
+- 在目标 Magpie 主机核实认证存储、备份与加密；真实主机 / 账号联调尚未验证。
+- 以自己的账号核对六平台实际 API、协议、模型、权限与倍率；公开代码核对不等于真实调用，手工 multiplier 自行维护。
+- autoCreateKeys 保持关闭，或明确接受创建副作用；pending 先核对远端，不重新授权来掩盖未知结果。
+- 金额限制须在 AIHub 核实设置；倍率与池大小不是费用封顶，首块前重试可能重复计费。
+- monitor 默认关闭，19871 未生产分配。Cloud 仅批准四个静态资源，无 service 新路由授权；opc-agent 生产私有路径拒绝不可绕过。
+- 调用方发送完整历史，并接受重载丢失亲和；local mock / Edge 合成桥接只证明对应本地路径。
 
 相关：[架构](architecture.md)、[权限](permissions.md)、[自动化](automation.md)、[测试覆盖映射](tests.md)。

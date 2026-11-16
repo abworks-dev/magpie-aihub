@@ -19,7 +19,16 @@ $env:MAGPIE_NO_ACCOUNTS = '1'
 $env:MAGPIE_ADDR = '127.0.0.1:0'
 & $resolvedCli plugin add $repo
 if ($LASTEXITCODE -ne 0) { throw 'Plugin installation failed' }
-& $resolvedCli plugin options $repo '{"models":[{"id":"offline-test","api":"responses"},{"id":"offline-chat","api":"chat"}]}'
+$configured = @(
+  @{ id = 'offline-test'; api = 'responses'; npm = '@ai-sdk/openai' },
+  @{ id = 'offline-chat'; api = 'chat'; npm = '@ai-sdk/openai-compatible' }
+)
+foreach ($platform in @('deepseek', 'zhipu', 'kimi', 'grok', 'gemini')) {
+  $configured += @{ id = "${platform}::offline-test"; api = 'responses'; npm = '@ai-sdk/openai' }
+}
+$configured += @{ id = 'gemini::offline-native'; api = 'gemini'; npm = '@ai-sdk/google' }
+$options = @{ models = @($configured | ForEach-Object { @{ id = $_.id; api = $_.api } }) } | ConvertTo-Json -Depth 5 -Compress
+& $resolvedCli plugin options $repo $options
 if ($LASTEXITCODE -ne 0) { throw 'Plugin options failed' }
 '[ {"groupId":101,"key":"SYNTHETIC-NONFUNCTIONAL-KEY","multiplier":0.08,"models":["offline-test","offline-chat"]} ]' | & $resolvedCli plugin login aihub-auto 1
 if ($LASTEXITCODE -ne 0) { throw 'Synthetic manual authentication failed' }
@@ -29,9 +38,10 @@ $state = ($json -join "`n") | ConvertFrom-Json
 $provider = @($state.providers | Where-Object id -eq 'aihub-auto')
 if ($provider.Count -ne 1 -or -not $provider[0].signedIn) { throw 'AIHub provider was not signed in' }
 $models = $provider[0].models
-$responses = @($models | Where-Object { $_.id -eq 'offline-test' -and $_.npm -eq '@ai-sdk/openai' })
-$chat = @($models | Where-Object { $_.id -eq 'offline-chat' -and $_.npm -eq '@ai-sdk/openai-compatible' })
-if ($responses.Count -ne 1 -or $chat.Count -ne 1) { throw 'Per-model SDK registration failed' }
+foreach ($expected in $configured) {
+  $matched = @($models | Where-Object { $_.id -eq $expected.id -and $_.npm -eq $expected.npm })
+  if ($matched.Count -ne 1) { throw "Per-model SDK registration failed for $($expected.id)" }
+}
 if (@($provider[0].methods | Where-Object { -not $_.keyless }).Count -ne 0) { throw 'Unexpected extra API key prompt' }
-Write-Output 'PASS: Magpie v0.1.3250 loads the plugin, authenticates synthetic manual keys and registers both model SDKs.'
+Write-Output 'PASS: Magpie v0.1.3250 loads the plugin, authenticates synthetic manual keys and registers all six platform namespaces and three model SDKs.'
 Write-Output 'No inference request or AIHub account login was sent. This does not test production deployment or browser rendering.'

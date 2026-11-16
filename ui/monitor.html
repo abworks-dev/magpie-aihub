@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="aihub-monitor-token" content="__AIHUB_MONITOR_TOKEN__">
+  <title>AIHub · 只读监控</title>
+  <link rel="stylesheet" href="./monitor.css">
+  <script src="./monitor.js" defer></script>
+</head>
+<body>
+  <main>
+    <header class="masthead">
+      <div><p class="eyebrow">AIHUB / ROUTING OBSERVATORY</p><h1>路由监控 <span class="badge">只读</span></h1><p class="intro">查看已加载的供应商目录与真实路由记录；不会运行付费探测。</p></div>
+      <div class="refresh-controls"><button id="refresh" type="button">刷新快照</button><label class="auto"><input id="auto" type="checkbox"> 每 30 秒刷新</label></div>
+    </header>
+    <p id="status" class="status" role="status" aria-live="polite">正在读取本地快照…</p>
+    <section id="failure" class="failure" role="alert" hidden><h2>暂时无法读取监控数据</h2><p id="failure-message"></p><p>检查本地插件是否运行、监控是否启用；先刷新或加载供应商，再点击「刷新快照」。刷新可读取 AIHub 已有目录，绝不调用模型探测或创建 Key。</p></section>
+    <nav id="platforms" class="tabs" aria-label="平台"></nav>
+    <section class="filters" aria-label="筛选">
+      <label>账户范围<select id="account"><option value="all">全部账户</option></select></label>
+      <label>模型<select id="model"><option value="all">全部模型</option></select></label>
+      <label class="search">搜索组 / 模型<input id="search" type="search" placeholder="名称、组 ID 或模型" autocomplete="off"></label>
+    </section>
+    <section class="cards" aria-label="当前平台概览">
+      <article><span>可见组</span><strong id="count-groups">—</strong><small>受账户与搜索筛选影响</small></article>
+      <article><span>可参与路由</span><strong id="count-eligible">—</strong><small>资格由路由器计算</small></article>
+      <article><span>当前绑定会话</span><strong id="count-selected">—</strong><small>插件内存中的会话选组，不是累计调用次数</small></article>
+      <article><span>最低目录倍率</span><strong id="min-rate">—</strong><small>非推测的推理单价</small></article>
+    </section>
+    <section class="panel"><div class="section-head"><h2>组目录与路由资格</h2><p>目录来源：AIHub 公布的监测结果 · TTFT 为目录报告值，缺失显示 —</p></div>
+      <p id="empty" class="empty" hidden></p>
+      <div class="table-wrap"><table><thead><tr><th>账户 / 组</th><th>模型</th><th>倍率</th><th>健康</th><th>TTFT</th><th>成功率</th><th>缓存命中</th><th>TPS</th><th>公布输入价 / 百万</th><th>路由状态</th></tr></thead><tbody id="groups"></tbody></table></div>
+    </section>
+    <section class="panel"><div class="section-head"><h2>账户与数据时间</h2><p>匿名账户范围 · 目录时间与推理观察时间分别显示</p></div><div id="accounts" class="account-grid"></div></section>
+    <section class="panel"><div class="section-head"><h2>最近路由记录</h2><p>推理观察来源：已有请求的本地路由记录</p></div><div id="routes" class="route-list"></div></section>
+    <footer><p><strong>图例：</strong>可选 = 路由器确认符合条件；冷却 = 故障后暂缓选择；已选 = 当前会话绑定数量；— = 暂无已知数据。</p><p>成功率、缓存命中率、TPS 与价格仅展示快照提供的值，不从倍率或 TTFT 推算。刷新读取本地路由记录并按缓存时效获取 AIHub 已有监测目录；自动刷新默认关闭且只在页面可见时运行。</p></footer>
+  </main>
+</body>
+</html>

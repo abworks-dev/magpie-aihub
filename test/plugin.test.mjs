@@ -80,6 +80,17 @@ test('session header is scoped to this provider', async () => {
   assert.deepEqual(b.headers, {});
 });
 
+test('chat default still discovers Gemini Responses and sets its platform header', async () => {
+  const hooks = await entry.server({ client: {} }, { defaultApi: 'chat' });
+  const data = manualBundle(JSON.stringify([{ groupId: 1, platform: 'gemini', key: 'SYNTHETIC', multiplier: 0.1, models: ['gemini-test'] }]));
+  const models = await hooks.provider.models({}, { auth: { key: JSON.stringify({ version: 1, mode: 'manual', instanceId: 'gemini-default', keys: data }) } });
+  assert.equal(models['gemini::gemini-test'].api.npm, '@ai-sdk/openai');
+  assert.equal(models['gemini::gemini-test'].api.id, 'gemini-test');
+  const output = {};
+  await hooks['chat.headers']({ model: { providerID: 'aihub-auto', id: 'gemini::gemini-test' } }, output);
+  assert.equal(output.headers['x-aihub-auto-platform'], 'gemini');
+});
+
 test('configuration refuses unknown secret fields and invalid numeric values', () => {
   assert.throws(() => settings({ password: 'fake' }), /Unknown option/);
   assert.throws(() => settings({ maxMultiplier: NaN }), /Invalid/);
