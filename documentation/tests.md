@@ -24,7 +24,7 @@ Key 错误测试验证稳定本地错误码不反射管理端响应，并覆盖�
 
 2026-11-17 01:12–01:13 +08，使用同一固定官方 CLI、摘要和隔离环境，对 v0.2.0 复验通过：本地插件加载、合成分组 Key 登录、六个平台共 8 个模型注册，以及 `@ai-sdk/openai`、`@ai-sdk/openai-compatible`、`@ai-sdk/google` 三种 SDK 选择。检查不设置全局 loader baseURL，模型配置各自携带协议 URL。注册成功不证明实际 SDK 生成的推理请求端到端可用。
 
-可重复脚本为 [magpie-host-smoke.ps1](../test/magpie-host-smoke.ps1)。CI 执行固定官方宿主及两个浏览器检查，结果以该版本实际 Actions 记录为准；上述旧提交 CI 成功不能替代本版 CI。所有隔离宿主检查均未发送推理或真实 AIHub 登录，不覆盖 Go 网关完整请求链、浏览器渲染或生产容器部署。
+可重复脚本为 [magpie-host-smoke.ps1](../test/magpie-host-smoke.ps1)。2026-11-17 01:23–01:25 +08，提交 `5795e41`（tag `v0.2.0`）的 [验证运行](https://github.com/abworks-dev/magpie-aihub/actions/runs/43917943251) 中 `node`、`bun`、`magpie-host` 三个任务均通过；`magpie-host` 在 Windows 上执行固定官方宿主、两个浏览器检查与上述八模型注册。旧提交的 CI 成功不能替代本版记录；后续提交须以各自 Actions 结果为准。所有隔离宿主检查均未发送推理或真实 AIHub 登录，不覆盖 Go 网关完整请求链、浏览器渲染或生产容器部署。
 
 ## 浏览器沙箱保存回归
 

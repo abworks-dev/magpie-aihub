@@ -128,7 +128,7 @@ npm run check
 npm pack --dry-run
 ```
 
-源码为无依赖 ESM，测试使用 Node >=22 内置测试器；运行环境为 Magpie 的 Bun 插件宿主。CI 同时检查 Node 与 Bun。没有下载后自动执行的安装脚本。
+源码为无依赖 ESM，测试使用 Node >=22 内置测试器；运行环境为 Magpie 的 Bun 插件宿主。CI 同时检查 Node、Bun 与 Windows 上的官方宿主和两项浏览器回归，v0.2.0 提交 `5795e41` 的[三个任务](https://github.com/abworks-dev/magpie-aihub/actions/runs/43917943251)均通过。没有下载后自动执行的安装脚本。
 
 验收顺序：先导入两把同平台同模型、已限额的测试 Key → 核对命名空间与协议 → 少量真实对话 → 检查会话保持和失败场景 → 再考虑账户自动建 Key。真实模型测试会产生费用；local mock 与 Edge 合成桥接不证明六平台真实接口、生产权限、费用或可用性。opc-agent 生产私有路径已被拒绝，不能通过其他路径或身份绕过。
 
