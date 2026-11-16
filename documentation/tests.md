@@ -14,6 +14,8 @@
 
 `/snapshot` 与页面的服务端断言、图片与 vm 覆盖见下一节；两项 Edge 合成代理回归仍保留在 CI。
 
+CI 于提交 `65e1869`（tag `v0.2.2`）的 [运行 43935911151](https://github.com/abworks-dev/magpie-aihub/actions/runs/43935911151) 中 `node`、`bun`、`magpie-host` 三个任务均通过；本机未安装 Bun，Bun 路径只由 CI 证明。
+
 ## v0.2.1 单页监控、页面服务与 Key 错误
 
 设置与监控合并为一份页面，由 page.service 在 127.0.0.1 提供，Magpie 的静态页只保留 bridge。测试覆盖：服务的精确 Host、Origin 缺省或 `null`、GET/HEAD-only、无 body、端口冲突与参数校验；`/snapshot` 的进程级 token（缺失/错误 403）、预检只放行 GET + 该头、`Access-Control-Allow-Origin: null`、响应体上限与端口占用拒绝；服务提供的 HTML 带 token 占位替换和 `../bridge.js` 重写，且不落盘。服务的监听失败统一包装为 `page service cannot listen on 127.0.0.1:<port>: <message>`，端口冲突断言不依赖各运行时错误文案——Bun 1.4.4 的报错是 "Failed to start server. Is port N in use?" 且不带 `code`，旧断言按 Node 的 `EADDRINUSE` 编写曾在 CI 的 bun 任务失败。同一进程内对同一端口再次启动会复用已有监听并改指向最新快照供应者，关闭后释放，避免每个插件工厂各起一份监听。
