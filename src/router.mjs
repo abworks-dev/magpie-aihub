@@ -389,8 +389,14 @@ export class Router {
               continue;
             }
             // Ordinary 400/404 may be caller errors; do not multiply charges trying other groups.
-            await response.body?.cancel();
-            return errorResponse(`AIHub rejected the request with HTTP ${response.status}; review model and request parameters`, response.status);
+            // Keep the upstream's own words and the exact route: a 404 usually means
+            // this group does not serve that model/protocol, not that routing failed.
+            let detail = '';
+            try {
+              const text = await response.text();
+              if (text) detail = `: ${text.slice(0, 240).replace(/\s+/g, ' ').trim()}`;
+            } catch {}
+            return errorResponse(`AIHub rejected the request with HTTP ${response.status}${detail} (POST ${url.pathname} via group ${candidate.groupId})`, response.status);
           }
           reader = response.body?.getReader();
           if (!reader) throw new Error('Empty upstream response');
