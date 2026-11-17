@@ -9,7 +9,10 @@
 // uses (Account.billingInfo). A failed read says why in the card instead of
 // showing a number: the plugin never guesses an allowance.
 
-const money = (n) => '$' + (Math.round(n * 100) / 100).toFixed(2);
+const money = (n) => {
+  const rounded = (Math.round(Math.abs(n) * 100) / 100).toFixed(2);
+  return (n < 0 ? '-$' : '$') + rounded;
+};
 const round2 = (n) => Math.round(n * 100) / 100;
 const share = (amount, limit) => (limit > 0 ? Math.max(0, Math.round((amount / limit) * 1000) / 10) : null);
 const finite = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
@@ -60,6 +63,18 @@ function spendWindow(item, options) {
   return { name: '本次运行', display: `${requests} 次请求 · ${money(spend)}`, used: null, aside: true };
 }
 
+// walletWindow is what AIHub says about the wallet itself when it publishes no
+// platform limits: the calls the account has made and what they cost. It stays
+// a text row because a wallet total has no ceiling to draw a share against.
+function walletWindow(usage) {
+  const requests = finite(usage?.requests);
+  const cost = finite(usage?.cost) ?? finite(usage?.actualCost);
+  if (cost === null && requests === null) return null;
+  const spent = cost === null ? '未报告花费' : money(cost);
+  const calls = requests === null ? '' : ` · ${requests} 次请求`;
+  return { name: '累计消耗', display: `${spent}${calls}`, used: null, aside: true };
+}
+
 /**
  * usageCard answers magpie's auth.usage for one AIHub account.
  *
@@ -107,7 +122,8 @@ export async function usageCard(item, options, { signal } = {}) {
   ].filter(Boolean);
   // No platform publishes a limit (an organization or quota-only account, or an
   // AIHub that answers nothing about quotas): the card still names the calls
-  // this plugin made rather than sitting empty.
-  card.windows = windows.length ? windows : [spendWindow(item, options)];
+  // this plugin made and what the wallet itself has spent rather than sitting
+  // empty.
+  card.windows = windows.length ? windows : [spendWindow(item, options), walletWindow(billing.usage)].filter(Boolean);
   return card;
 }

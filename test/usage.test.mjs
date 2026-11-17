@@ -75,6 +75,31 @@ test('an AIHub that answers no quota falls back to the calls this plugin made', 
   assert.deepEqual(card.windows, [{ name: '本次运行', display: '7 次请求 · $1.50', used: null, aside: true }]);
 });
 
+test('with no platform limit the card also names what the wallet has spent', async () => {
+  const card = await usageCard(managed({
+    balance: -0.1,
+    balanceKnown: true,
+    platforms: [],
+    usage: { requests: 42, tokens: 120000, cost: 8.765, actualCost: 8.5 },
+  }), {});
+
+  assert.equal(card.balance, '-$0.10', 'an overdrawn wallet keeps its sign');
+  assert.deepEqual(card.windows, [
+    { name: '本次运行', display: '7 次请求 · $1.50', used: null, aside: true },
+    { name: '累计消耗', display: '$8.77 · 42 次请求', used: null, aside: true },
+  ]);
+});
+
+test('a wallet total with no cost still names the calls it counted', async () => {
+  const card = await usageCard(managed({
+    balanceKnown: false,
+    platforms: [],
+    usage: { requests: 5, cost: null },
+  }), {});
+
+  assert.deepEqual(card.windows.map((w) => w.display), ['7 次请求 · $1.50', '未报告花费 · 5 次请求']);
+});
+
 test('a daily budget the user set is shown when AIHub names no allowance', async () => {
   const card = await usageCard(managed({ balanceKnown: false, platforms: [] }), { dailyBudget: 6 });
 
