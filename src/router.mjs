@@ -265,8 +265,10 @@ export class Router {
       const sticky = session && this.sessions.get(session)?.groupId;
       if (sticky) candidates.sort((a, b) => Number(b.groupId === sticky) - Number(a.groupId === sticky));
       // A full managed pool does not create/delete keys just because market rankings move.
+      const beforePool = candidates;
       if (this.account.data.mode === 'managed' && this.account.data.keys.length >= this.o.poolSize)
         candidates = candidates.filter(c => this.account.data.keys.some(k => k.groupId === c.groupId));
+      const poolBlocked = beforePool.length - candidates.length;
       let attempts = 0;
       for (const candidate of candidates) {
         signal.throwIfAborted();
@@ -282,7 +284,7 @@ export class Router {
         }
         try {
           const ids = await this.account.modelIds(key, this.o, signal);
-          if (!ids.includes(model)) continue;
+          if (!ids.some(id => bareModelId(id) === model)) continue;
         } catch {
           signal.throwIfAborted();
           this.penalize(candidate.groupId);
@@ -379,7 +381,8 @@ export class Router {
           if (session) this.sessions.delete(session);
         } finally { clearTimeout(timer); }
       }
-      return errorResponse(this.routeFailure(catalogue.filter(c => (c.platform ?? 'openai') === platform), model, platform), 503, 'no_eligible_route');
+      const note = poolBlocked > 0 ? `; ${poolBlocked} more groups have no dedicated key and the pool is full` : '';
+      return errorResponse(this.routeFailure(catalogue.filter(c => (c.platform ?? 'openai') === platform), model, platform) + note, 503, 'no_eligible_route');
     } catch {
       if (request.signal.aborted) throw request.signal.reason;
       return errorResponse(signal.aborted ? 'AIHub routing deadline exceeded' : 'AIHub catalogue unavailable or no usable route');

@@ -416,3 +416,11 @@ test('an exhausted route names the reason every group was dropped', async () => 
   assert.equal(response.status, 503);
   assert.match(text, /over the multiplier cap ×1/);
 });
+
+test('a group that advertises namespaced ids still matches the bare model', async () => {
+  const rows = [candidate(1, { platform: 'kimi', models: ['kimi-k3'], multiplier: 0.5 })];
+  const { router, calls } = fixture(rows, { platformCaps: { kimi: 1 } }, { advertised: ['kimi::kimi-k3'] });
+  const { response } = await consume(router, request({ model: 'kimi-k3' }));
+  assert.equal(response.status, 200);
+  assert.equal(calls[0].group, 1);
+});
