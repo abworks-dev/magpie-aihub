@@ -103,7 +103,8 @@ export function snapshotView(raw) {
       })),
       billing: account?.billing ? {
         at: timestamp(account.billing.at),
-        balance: number(account.billing.balance), frozen: number(account.billing.frozen), recharged: number(account.billing.recharged),
+        balance: number(account.billing.balance), balanceKnown: bool(account.billing.balanceKnown),
+        frozen: number(account.billing.frozen), recharged: number(account.billing.recharged),
         notify: account.billing.notify ? {
           enabled: bool(account.billing.notify.enabled), threshold: number(account.billing.notify.threshold),
           kind: code(account.billing.notify.kind),

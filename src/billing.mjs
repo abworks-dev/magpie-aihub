@@ -23,9 +23,15 @@ export async function loadBilling(account, signal) {
     }),
   ]);
   const rows = Array.isArray(quotas?.platform_quotas) ? quotas.platform_quotas : [];
+  const balance = number(me?.balance);
   return {
     at: Date.now(),
-    balance: number(me?.balance),
+    balance,
+    // Distinguishes "the account carries no wallet balance" (organization or
+    // quota-only account, the field is absent) from "the read failed" (no
+    // billing object at all, billingError explains why). The page shows a dash
+    // either way, but only this flag lets it say which case it is.
+    balanceKnown: balance !== null,
     frozen: number(me?.frozen_balance),
     recharged: number(me?.total_recharged),
     concurrency: number(me?.concurrency),

@@ -56,7 +56,8 @@ export async function monitorSnapshot(runtimes, options, now = Date.now) {
       routes: (router.lastRoutes ?? []).slice(-100).map(r => ({ platform: text(r.platform), model: text(r.model), groupId: r.groupId, at: finite(r.at), outcome: text(r.outcome) })),
       keyState: { ready: account.data.keys.length, pending: account.data.pending ? 1 : 0, autoCreateKeys: options.autoCreateKeys, maxKeysPerAccount: options.maxKeysPerAccount, minBalance: options.minBalance },
       billing: billing ? {
-        at: finite(billing.at), balance: finite(billing.balance), frozen: finite(billing.frozen), recharged: finite(billing.recharged),
+        at: finite(billing.at), balance: finite(billing.balance), balanceKnown: billing.balanceKnown === true,
+        frozen: finite(billing.frozen), recharged: finite(billing.recharged),
         notify: billing.notify ? { enabled: billing.notify.enabled, threshold: finite(billing.notify.threshold), kind: text(billing.notify.kind) } : null,
         usage: billing.usage ? {
           requests: finite(billing.usage.requests), tokens: finite(billing.usage.tokens),

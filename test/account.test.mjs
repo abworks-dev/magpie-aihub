@@ -375,9 +375,27 @@ test('a balance below the threshold stops new keys and still exposes the billing
   assert.equal(account.audit.at(-1).code, 'balance_too_low');
   const billing = await account.billingInfo(options({ minBalance: 5 }));
   assert.equal(billing.balance, 1.25);
+  assert.equal(billing.balanceKnown, true);
   assert.equal(billing.usage.requests, 3);
   assert.equal(billing.platforms[0].monthlyLimit, 5);
   assert.ok(calls.includes('/api/v1/auth/me'));
+});
+
+test('an account with no wallet balance is flagged instead of reading as a failed read', async () => {
+  const account = new Account(managed(), {
+    save: async () => {},
+    fetcher: async url => {
+      const path = pathOf(url);
+      if (path === '/api/v1/auth/me') return json({ frozen_balance: 0, concurrency: 8, rpm_limit: 60 });
+      if (path === '/api/v1/usage/stats') return json({ total_requests: 0, total_tokens: 0, total_cost: 0 });
+      return json({ platform_quotas: [] });
+    },
+  });
+  const billing = await account.billingInfo(options());
+  assert.equal(billing.balance, null);
+  assert.equal(billing.balanceKnown, false);
+  assert.equal(billing.frozen, 0);
+  assert.equal(account.billingError, undefined, 'a present response is not a failed read');
 });
 
 test('billing keeps nulls when usage endpoints are unavailable and caches the refresh', async () => {

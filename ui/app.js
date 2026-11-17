@@ -392,8 +392,10 @@
         return clock(e.at) + ' ' + escapeHtml(label) + (e.action === 'blocked' && e.code ? '（' + escapeHtml(e.code) + '）' : '');
       }).join(' · ') + '</p>' : '';
       return '<article class="account-card">' + head
-        + '<div class="account-balance"><span class="account-figure">' + money(billing.balance) + '</span>'
-        + '<span class="account-sub">可用余额 · 冻结 ' + money(billing.frozen) + '</span></div>'
+        + '<div class="account-balance"><span class="account-figure"' + (billing.balanceKnown === false ? ' title="该账户未返回余额字段（可能是组织或配额账号）"' : '') + '>' + money(billing.balance) + '</span>'
+        + '<span class="account-sub">可用余额 · 冻结 ' + money(billing.frozen) + '</span>'
+        + (billing.balanceKnown === false ? '<span class="account-note">该账户未返回余额字段（组织/配额账号）</span>' : '')
+        + '</div>'
         + '<dl class="account-metrics">'
         + '<div><dt>今日消耗</dt><dd>' + money(total('dailyUsage')) + '</dd></div>'
         + '<div><dt>本月消耗</dt><dd>' + money(total('monthlyUsage')) + '</dd></div>'

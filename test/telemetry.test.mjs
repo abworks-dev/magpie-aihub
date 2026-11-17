@@ -44,7 +44,7 @@ test('monitor exposes billing and key audit metadata without account identity', 
       directoryRows: [],
       audit: [{ at: 10, action: 'created', groupId: 4, code: 'created' }],
       billingInfo: async () => ({
-        at: 20, balance: 12.5, frozen: 0, recharged: 30,
+        at: 20, balance: 12.5, balanceKnown: true, frozen: 0, recharged: 30,
         notify: { enabled: true, threshold: 2, kind: 'fixed' },
         usage: { requests: 5, tokens: 100, cost: 1, actualCost: 0.8 },
         platforms: [{ platform: 'openai', dailyLimit: null, dailyUsage: 0.2, weeklyLimit: null, weeklyUsage: null, monthlyLimit: null, monthlyUsage: null }],
@@ -54,6 +54,7 @@ test('monitor exposes billing and key audit metadata without account identity', 
   };
   const result = await monitorSnapshot(new Map([['any', runtime]]), settings());
   assert.equal(result.accounts[0].billing.balance, 12.5);
+  assert.equal(result.accounts[0].billing.balanceKnown, true);
   assert.equal(result.accounts[0].billing.usage.requests, 5);
   assert.equal(result.accounts[0].billingError, null);
   assert.deepEqual(result.accounts[0].keyEvents, [{ at: 10, action: 'created', groupId: 4, code: 'created' }]);

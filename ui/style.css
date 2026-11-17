@@ -185,6 +185,7 @@ fieldset:disabled { opacity: .6; }
 .account-balance { margin-top: 10px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .account-figure { font-size: 24px; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
 .account-sub { color: var(--muted); font-size: 11.5px; }
+.account-note { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
 .account-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; margin: 12px 0 0; padding: 11px 0 0; border-top: 1px solid var(--line); }
 .account-metrics dt { color: var(--muted); font-size: 11px; }
 .account-metrics dd { margin: 1px 0 0; font-size: 13px; font-variant-numeric: tabular-nums; }
