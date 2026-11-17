@@ -163,6 +163,31 @@ test('the monitor tab opens the plugin service instead of a second page', async 
   assert.equal(h.node('view-settings').hidden, true);
 });
 
+test('an overdrawn wallet reads -$0.10 on the monitor page, not a dash', async () => {
+  const overdrawn = {
+    schemaVersion: 1, generatedAt: Date.now(),
+    accounts: [{
+      label: '账户1', mode: 'managed', stale: false,
+      groups: [{ groupId: 7, name: 'Fixture group', platform: 'openai', multiplier: 0.08, available: true, passed: true,
+        latency: 250, metrics: {}, models: [], eligible: true, reasons: [], hasKey: false, selectedCount: 0 }],
+      routes: [], keys: [], evictions: [],
+      keyState: { ready: 0, pending: 0 },
+      billing: { at: Date.now(), balance: -0.1, balanceKnown: true, frozen: 0, recharged: 0,
+        usage: { requests: 0, tokens: 0, cost: 0, actualCost: 0 }, platforms: [] },
+    }],
+  };
+  const h = harness({
+    withBridge: false, pathname: '/_magpie/plugin/tok/_magpie/service/', token: 'test-token',
+    fetchImpl: async () => ({ ok: true, status: 200, json: async () => overdrawn }),
+  });
+  await settle();
+  h.clickTab('monitor');
+  await settle(); await settle();
+  const cards = h.node('monitor-accounts').innerHTML;
+  assert.match(cards, /-\$0\.10/, 'the minus sign goes before the dollar sign');
+  assert.doesNotMatch(cards, /\$-0\.10/, 'the sign must not trail the dollar sign');
+});
+
 test('the placeholder token on the static page still opens the plugin service', async () => {
   const h = harness({ service: '_magpie/service/', token: '__AIHUB_SERVICE_TOKEN__' });
   await settle();

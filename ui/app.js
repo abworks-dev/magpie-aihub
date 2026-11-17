@@ -461,7 +461,13 @@
     if (outcome === 'ok' || outcome === 'success' || outcome === 'selected') return 'pill-ok';
     return outcome ? 'pill-off' : 'pill-neutral';
   }
-  const money = value => num(value) === null ? '—' : '$' + num(value).toFixed(2);
+  // The sign belongs before the dollar sign: an account that spent past its
+  // top-up reads -$0.10, the same way Magpie's own usage card prints it.
+  const money = value => {
+    const n = num(value);
+    if (n === null) return '—';
+    return (n < 0 ? '-$' : '$') + Math.abs(n).toFixed(2);
+  };
 
   async function loadIdentity(index) {
     const token = serviceToken();
