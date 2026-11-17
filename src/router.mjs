@@ -347,7 +347,7 @@ export class Router {
       // it no longer doubles as a key budget.
       candidates = candidates.slice(0, Math.max(1, this.o.poolSize));
       const poolBlocked = beforePool.length - candidates.length;
-      let attempts = 0, keyMismatch = 0, keyBlocked = 0, firstKeyFailure = null;
+      let attempts = 0, keyMismatch = 0, keyBlocked = 0, firstKeyFailure = null, groupMiss = null;
       let payload = {};
       try { payload = bytes?.length ? JSON.parse(bytes) : {}; } catch { payload = {}; }
       const streaming = payload?.stream === true;
@@ -423,6 +423,13 @@ export class Router {
               const text = await response.text();
               if (text) detail = `: ${text.slice(0, 240).replace(/\s+/g, ' ').trim()}`;
             } catch {}
+            // "Not available for this group" is the group's own verdict, not the
+            // caller's mistake: remember it briefly and let the next group answer.
+            if (response.status === 404 && /not available for this group/i.test(detail)) {
+              this.rejected.set(`${candidate.groupId}:${model}`, this.now() + this.o.cooldownMs);
+              groupMiss = { message: `AIHub rejected the request with HTTP ${response.status}${detail} (POST ${url.pathname} via group ${candidate.groupId})`, status: response.status };
+              continue;
+            }
             return errorResponse(`AIHub rejected the request with HTTP ${response.status}${detail} (POST ${url.pathname} via group ${candidate.groupId})`, response.status);
           }
           // Gemini speaks generateContent, so a non-streaming call is translated
@@ -519,6 +526,9 @@ export class Router {
           if (session) this.sessions.delete(session);
         } finally { clearTimeout(timer); }
       }
+      // Every group answered "not available for this group": report the upstream
+      // words and status rather than a routing failure that hides them.
+      if (groupMiss) return errorResponse(groupMiss.message, groupMiss.status);
       const notes = [];
       if (poolBlocked > 0) notes.push(`${poolBlocked} groups need a new key but the account key limit is reached (${this.account.data.keys.length} of ${this.o.maxKeysPerAccount}); prune an idle key or raise the limit`);
       if (keyBlocked > 0) notes.push(`${keyBlocked} groups could not mint a key; the groups that already own one were tried instead`);

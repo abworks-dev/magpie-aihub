@@ -345,6 +345,24 @@ test('ordinary 400 and 404 inference errors are returned without trying another 
   }
 });
 
+test('a group that says the model is unavailable for it hands over to the next group', async () => {
+  const body = JSON.stringify({ error: { code: 404, message: `Model "${model}" is not available for this group`, status: 'NOT_FOUND' } });
+  const { router, calls } = fixture(undefined, {}, { respond: async (url, init) => groupOf(init) === 1 ? new Response(body, { status: 404 }) : new Response('ok') });
+  const { response, text } = await consume(router, request());
+  assert.equal(response.status, 200);
+  assert.equal(text, 'ok');
+  assert.deepEqual(calls.map(c => c.group), [1, 2]);
+});
+
+test('when every group says the model is unavailable, its own answer is returned', async () => {
+  const body = JSON.stringify({ error: { code: 404, message: `Model "${model}" is not available for this group`, status: 'NOT_FOUND' } });
+  const { router, calls } = fixture(undefined, {}, { respond: async () => new Response(body, { status: 404 }) });
+  const { response, text } = await consume(router, request());
+  assert.equal(response.status, 404);
+  assert.match(text, /not available for this group/);
+  assert.equal(calls.length, 2);
+});
+
 test('model discovery reads existing keys without preparing or creating keys', async () => {
   const { router, account, prepared, calls } = fixture();
   account.modelIds = async key => key.groupId === 1 ? ['z-model', model] : [model, 'a-model'];
