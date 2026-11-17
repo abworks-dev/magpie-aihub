@@ -56,6 +56,12 @@ test('fresh managed account with zero keys discovers sorted hall IDs using only 
   assert.equal(settings().defaultApi, 'responses');
 });
 
+test('bare ids are advertised when the option is on, so Magpie can group them by name', async () => {
+  const { router } = fixture({ providers: [hall(1, ['model-a'])], options: { bareModelIds: true } });
+  const response = await router.fetch(`${BASE}/models`);
+  assert.deepEqual((await response.json()).data.map(entry => entry.id), ['model-a']);
+});
+
 test('a price-first strategy does not hide models that have no observed price yet', async () => {
   const { router } = fixture({ providers: [hall(1, ['model-a', 'model-b'])], options: { strategy: 'price' } });
   assert.deepEqual(await router.discover(), ['model-a', 'model-b']);

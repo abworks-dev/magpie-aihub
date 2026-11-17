@@ -248,7 +248,10 @@ export class Router {
       return errorResponse('Only supported AIHub inference and model-discovery endpoints are allowed', 400);
     if (url.pathname === '/v1/models') {
       if (request.method !== 'GET') return errorResponse('Method not allowed', 405);
-      try { return Response.json({ object: 'list', data: (await this.discover(request.signal)).map(id => ({ id, object: 'model', owned_by: 'aihub' })) }); }
+      try {
+        const bare = this.o.bareModelIds;
+        return Response.json({ object: 'list', data: (await this.discover(request.signal)).map(id => ({ id: bare ? bareModelId(id) : id, object: 'model', owned_by: 'aihub' })) });
+      }
       catch { return errorResponse('Cannot discover models; configure explicit model IDs or check group credentials'); }
     }
     if (request.method !== 'POST') return errorResponse('Method not allowed', 405);
@@ -422,7 +425,7 @@ export class Router {
             if (session) { this.sessions.set(session, { groupId: candidate.groupId, until: this.now() + this.o.sessionTtlMs }); this.prune(); }
             this.praise(candidate.groupId);
             this.recordRoute(candidate, model, 'success');
-            return new Response(JSON.stringify(fromGeminiResponse(json, publicModelId('gemini', model), inboundPath)), {
+            return new Response(JSON.stringify(fromGeminiResponse(json, this.publicId('gemini', model), inboundPath)), {
               status: 200, headers: { 'content-type': 'application/json; charset=utf-8' },
             });
           }
@@ -444,7 +447,7 @@ export class Router {
           // The same pass counts tokens for the local cost estimate; it never edits bytes.
           const decoder = new TextDecoder();
           const encode = text => new TextEncoder().encode(text);
-          const translator = gemini ? geminiStream(inboundPath, publicModelId('gemini', model)) : null;
+          const translator = gemini ? geminiStream(inboundPath, this.publicId('gemini', model)) : null;
           const usage = { input: 0, output: 0 };
           let tail = '';
           const observe = chunk => {
@@ -515,6 +518,11 @@ export class Router {
   }
   // One line per changed result: tells the operator how many ids each platform
   // actually contributed, which is the fastest way to see a platform filtered out.
+  // The id a caller sees: the namespace is optional because Magpie groups models
+  // by name, and a prefixed id never joins a group named after the bare model.
+  publicId(platform, id) {
+    return publicModelId(platform, id, this.o.bareModelIds);
+  }
   noteDiscovery(ids) {
     const counts = new Map();
     for (const id of ids) {

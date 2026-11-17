@@ -184,6 +184,11 @@ test('read-only managed discovery namespaces all six platforms without touching 
   assert.equal(fetches, 0);
 });
 
+test('the caller can ask for bare ids, which is what joins a same-named routing group', () => {
+  assert.equal(publicModelId('gemini', 'gemini-3.8-flash', true), 'gemini-3.8-flash');
+  assert.equal(publicModelId('deepseek', 'deepseek::deepseek-v4-pro', true), 'deepseek-v4-pro');
+});
+
 test('namespacing a model id twice still yields one parseable id', () => {
   assert.equal(publicModelId('zhipu', 'zhipu::glm-5.2'), 'zhipu::glm-5.2');
   assert.equal(publicModelId('deepseek', 'deepseek:deepseek-flash'), 'deepseek::deepseek-flash');

@@ -13,7 +13,7 @@ const defaults = {
   breakerWindowMs: 300_000, breakerMinSamples: 5, breakerFailureRate: 0.5,
   dailyBudget: 0, priceAlertRatio: 0.2,
   excludedGroups: [], allowedGroups: [], requirePassed: false,
-  defaultApi: 'responses', models: [], autoCreateKeys: false,
+  defaultApi: 'responses', models: [], autoCreateKeys: false, bareModelIds: false,
   platforms: [...PLATFORMS], monitorPort: 19871,
   // Deprecated: the page service is always on, so this stored option is accepted
   // for older installs and otherwise ignored.
@@ -50,7 +50,7 @@ export function settings(raw = {}) {
   }
   o.platformCaps = { ...o.platformCaps };
   if (!['responses', 'chat'].includes(o.defaultApi)) throw new Error('Invalid defaultApi');
-  if ([o.requirePassed, o.autoCreateKeys, o.monitorEnabled].some(v => typeof v !== 'boolean')) throw new Error('Boolean option expected');
+  if ([o.requirePassed, o.autoCreateKeys, o.bareModelIds, o.monitorEnabled].some(v => typeof v !== 'boolean')) throw new Error('Boolean option expected');
   if (!Array.isArray(o.platforms) || !o.platforms.length || !o.platforms.every(validPlatform) || new Set(o.platforms).size !== o.platforms.length) throw new Error('Invalid platforms');
   o.platforms = [...o.platforms];
   for (const key of ['excludedGroups', 'allowedGroups']) {

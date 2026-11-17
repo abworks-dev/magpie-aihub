@@ -114,6 +114,12 @@
                   <span class="switch-track" aria-hidden="true"></span>
                   <span class="switch-text"><strong>允许自动创建专用 AIHub 密钥</strong><small>默认关闭，仅在你主动开启后创建。</small></span>
                 </label>
+                <label class="switch">
+                  <input id="bareModelIds" name="bareModelIds" type="checkbox" aria-describedby="bare-ids-note">
+                  <span class="switch-track" aria-hidden="true"></span>
+                  <span class="switch-text"><strong>对外模型名去掉平台前缀</strong><small>默认关闭；开启后 <code>gemini::MODEL</code> 显示为 <code>MODEL</code>，可并入 Magpie 的同名路由组。</small></span>
+                </label>
+                <p id="bare-ids-note" class="note">同名模型在多个平台都存在时，路由按请求头提示与分组公布清单推断平台；推断不出来时 503 文案会列出各平台的命中数。</p>
                 <p id="keys-warning" class="note note-warn">开启后插件会在你的 AIHub 账户里新建专用密钥；服务端配额限制尚未验证，不能据此保证费用上限。插件不会删除密钥，关闭开关也不会撤销已创建的密钥。</p>
               </div>
             </section>

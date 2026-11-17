@@ -17,7 +17,7 @@
     dailyBudget: 0, priceAlertRatio: 0.2,
     excludedGroups: [], allowedGroups: [], requirePassed: false,
     minBalance: 0, maxKeysPerAccount: 8, keysPerPlatform: 0,
-    autoCreateKeys: false, defaultApi: 'responses', models: [], monitorPort: 19871,
+    autoCreateKeys: false, bareModelIds: false, defaultApi: 'responses', models: [], monitorPort: 19871,
     platforms: [...platforms],
   };
   // Preserve only recognized, valid nonsecret settings from the latest options.
@@ -112,7 +112,7 @@
     if (validInteger(raw.maxKeysPerAccount, 1, 32)) result.maxKeysPerAccount = raw.maxKeysPerAccount;
     if (validInteger(raw.keysPerPlatform, 0, 32)) result.keysPerPlatform = raw.keysPerPlatform;
     for (const key of ['excludedGroups', 'allowedGroups']) if (groupList(raw[key])) result[key] = [...new Set(raw[key])];
-    for (const key of ['requirePassed', 'autoCreateKeys']) if (typeof raw[key] === 'boolean') result[key] = raw[key];
+    for (const key of ['requirePassed', 'autoCreateKeys', 'bareModelIds']) if (typeof raw[key] === 'boolean') result[key] = raw[key];
     if (['responses', 'chat'].includes(raw.defaultApi)) result.defaultApi = raw.defaultApi;
     for (const [key, [min, max]] of Object.entries(advancedRanges)) if (validInteger(raw[key], min, max)) result[key] = raw[key];
     if (Array.isArray(raw.platforms) && raw.platforms.length && raw.platforms.every(id => platforms.includes(id))) result.platforms = [...new Set(raw.platforms)];
@@ -127,7 +127,7 @@
     $('platformCaps').value = capsToText(options.platformCaps);
     for (const platform of platforms) $(`platform-${platform}`).checked = options.platforms.includes(platform);
     for (const key of ['excludedGroups', 'allowedGroups']) $(key).value = options[key].join(', ');
-    for (const key of ['requirePassed', 'autoCreateKeys']) $(key).checked = options[key];
+    for (const key of ['requirePassed', 'autoCreateKeys', 'bareModelIds']) $(key).checked = options[key];
     $('models').value = options.models.map(model => {
       const { id } = modelIdentity(model);
       return model.api ? `${id}|${model.api}` : id;
@@ -207,6 +207,7 @@
       allowedGroups: readGroups('allowedGroups', '仅允许分组'),
       requirePassed: $('requirePassed').checked,
       autoCreateKeys: $('autoCreateKeys').checked,
+      bareModelIds: $('bareModelIds').checked,
       defaultApi: $('defaultApi').value,
       models: readModels(),
     };

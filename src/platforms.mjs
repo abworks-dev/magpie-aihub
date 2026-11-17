@@ -6,9 +6,9 @@ export const protocolNpm = api => api === 'gemini' ? '@ai-sdk/google' : api === 
 // AIHub publishes OpenAI ids bare and namespaces every other platform. Cards and
 // group listings sometimes carry that namespace too, so strip it first: adding it
 // twice would produce an id no descriptor can parse back.
-export const publicModelId = (platform, id) => {
-  const bare = bareModelId(id);
-  return platform === 'openai' ? bare : `${platform}::${bare}`;
+export const publicModelId = (platform, id, bare = false) => {
+  const model = bareModelId(id);
+  return bare || platform === 'openai' ? model : `${platform}::${model}`;
 };
 // Magpie renders `platform::model` as `platform:model` in its provider dialog and
 // may forward either shape back, so accept both and keep the bare model id.

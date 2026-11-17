@@ -39,6 +39,9 @@ async function pruneIdleKeys(runtimes, apply) {
   return result;
 }
 
+// Gemini models registered under the Responses shape: the plugin translates them.
+const descriptorApi = (id, fallback) => (id.startsWith('gemini::') ? 'responses' : fallback);
+
 async function AIHubPlugin({ client }, initialOptions = {}) {
   const options = settings(initialOptions);
   const runtimes = new Map();
@@ -161,9 +164,10 @@ async function AIHubPlugin({ client }, initialOptions = {}) {
         if (!ids) return provider?.models ?? {};
         lastDiscoveryError = '';
         return Object.fromEntries(ids.map(id => {
-          const descriptor = modelDescriptor(id, id.startsWith('gemini::') ? 'responses' : options.defaultApi);
-          return [id, {
-          id, providerID: PROVIDER, name: id,
+          const descriptor = modelDescriptor(id, descriptorApi(id, options.defaultApi));
+          const key = options.bareModelIds ? descriptor.modelId : id;
+          return [key, {
+          id: key, providerID: PROVIDER, name: key,
           api: { id: descriptor.modelId, url: protocolBase(descriptor.api), npm: protocolNpm(descriptor.api) },
           limit: { context: 128000, output: 16384 },
           capabilities: { reasoning: false, toolcall: true, attachment: false, input: { text: true, image: false }, output: { text: true } },
