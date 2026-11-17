@@ -56,6 +56,26 @@ test('price strategy prefers the lowest real price and falls back to the multipl
   assert.equal(bare.calls[0].group, 2, 'no real price falls back to the nominal multiplier');
 });
 
+test('value strategy trades a lower price against delay and failure rate', async () => {
+  const rows = [
+    candidate(1, { multiplier: 0.05, latency: 10, metrics: { realPrice: 0.05, successRate: 0.6 } }),
+    candidate(2, { multiplier: 0.09, latency: 20, metrics: { realPrice: 0.09, successRate: 1 } }),
+  ];
+  const { router, calls } = fixture(rows, { strategy: 'value', maxMultiplier: 1 });
+  await consume(router, request());
+  assert.equal(calls[0].group, 2, 'a slightly pricier route wins when the cheap one fails a third of the time');
+});
+
+test('reliable strategy ranks success rate above price', async () => {
+  const rows = [
+    candidate(1, { multiplier: 0.01, metrics: { realPrice: 0.01, successRate: 0.9 } }),
+    candidate(2, { multiplier: 0.15, metrics: { realPrice: 0.15, successRate: 0.99 } }),
+  ];
+  const { router, calls } = fixture(rows, { strategy: 'reliable', maxMultiplier: 1 });
+  await consume(router, request());
+  assert.equal(calls[0].group, 2, 'the steadier route wins even though it costs fifteen times more');
+});
+
 test('429 fails over and excludes the failed route until Retry-After expires', async t => {
   for (const format of ['seconds', 'http-date']) {
     await t.test(format, async () => {

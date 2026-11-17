@@ -10,7 +10,7 @@
 | --- | --- | --- | --- |
 | platforms | [openai,deepseek,zhipu,kimi,grok,gemini]；支持平台的非空、无重复数组 | UI + 入口 / Router | 限制启用平台；同平台同模型 failover，不跨平台 |
 | maxMultiplier | 0.16；0–100 有限数 | UI + Router | 名义倍率上限，0 仅免费组；不是金额预算 / Key 配额 |
-| strategy | balanced；economy / balanced / speed | UI + Router | 按倍率、倍率×(1+min(ms,60000)/10000)、延迟排序；未知延迟取 30000ms |
+| strategy | balanced；economy / balanced / speed / price / value / reliable | UI + Router | 按倍率、倍率×(1+min(ms,60000)/10000)、延迟、真实价格排序；`value` = 价格×(1+min(ms,60000)/10000)×(1+3×(1-成功率))；`reliable` = (1-成功率)×1e6+价格；未知延迟取 30000ms |
 | maxAttempts | 3；整数 1–5 | UI + Router | 推理发送次数含首次；Key / 模型读取不计入；首块前切换可能重复计费 |
 | poolSize | 4；整数 1–8 | UI + Account / Router | managed 保存 Key 上限，池满不换/删 Key；managed 发现不要求已有 Key，已有 Key 补充最多读取 N 个 |
 | excludedGroups | []；正安全整数数组 | UI + Router | 排除优先 |

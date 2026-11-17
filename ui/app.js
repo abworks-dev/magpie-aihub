@@ -78,7 +78,7 @@
 
   function safeOptions(raw) {
     const result = { ...defaults };
-    if (['economy', 'balanced', 'speed', 'price'].includes(raw.strategy)) result.strategy = raw.strategy;
+    if (['economy', 'balanced', 'speed', 'price', 'value', 'reliable'].includes(raw.strategy)) result.strategy = raw.strategy;
     if (typeof raw.maxMultiplier === 'number' && Number.isFinite(raw.maxMultiplier) && raw.maxMultiplier >= 0 && raw.maxMultiplier <= 100) result.maxMultiplier = raw.maxMultiplier;
     if (validInteger(raw.maxAttempts, 1, 5)) result.maxAttempts = raw.maxAttempts;
     if (validInteger(raw.poolSize, 1, 8)) result.poolSize = raw.poolSize;
@@ -158,7 +158,7 @@
 
   function readForm() {
     if (typeof form.querySelectorAll === 'function') form.querySelectorAll('[aria-invalid]').forEach(field => field.removeAttribute('aria-invalid'));
-    if (!['economy', 'balanced', 'speed', 'price'].includes($('strategy').value)) invalid('strategy', '请选择有效的路由策略。');
+    if (!['economy', 'balanced', 'speed', 'price', 'value', 'reliable'].includes($('strategy').value)) invalid('strategy', '请选择有效的路由策略。');
     if (!['responses', 'chat'].includes($('defaultApi').value)) invalid('defaultApi', '请选择有效的默认 API。');
     const enabledPlatforms = platforms.filter(platform => $(`platform-${platform}`).checked);
     if (!enabledPlatforms.length) invalid('platform-openai', '请至少选择一个平台。');
@@ -435,13 +435,17 @@
     $('monitor-updated').textContent = state.snapshot?.generatedAt ? `更新于 ${clock(state.snapshot.generatedAt)}` : '';
     renderAccounts(accountsList);
 
+    const skipped = new Map();
+    for (const row of rows) if (row.eligible !== true) for (const reason of row.reasons ?? []) skipped.set(reason, (skipped.get(reason) ?? 0) + 1);
+    const skippedTop = [...skipped].sort((a, b) => b[1] - a[1]);
+    const skippedHint = skippedTop.length ? `主因：${skippedTop.slice(0, 2).map(([reason, count]) => `${reason} ×${count}`).join('、')}` : '没有分组被排除';
     $('monitor-summary').innerHTML = [
       ['账户', accountsList.length, errorCode ? `目录：${escapeHtml(catalogueLabels[errorCode] ?? errorCode)}` : stale ? '目录较旧' : '目录已刷新'],
       ['分组', rows.length, '来自当前目录'],
-      ['可用分组', eligible, `${rows.length - eligible} 个被排除或不可用`],
+      ['可用分组', eligible, `${rows.length - eligible} 个被排除 · ${escapeHtml(skippedHint)}`, skippedTop.map(([reason, count]) => `${reason} ×${count}`).join('\n')],
       ['路由记录', routes.length, '最近 100 条内存记录'],
-    ].map(([label, value, hint]) => `
-      <div class="kpi">
+    ].map(([label, value, hint, title]) => `
+      <div class="kpi"${title ? ` title="${escapeHtml(title)}"` : ''}>
         <span class="kpi-label">${label}</span>
         <span class="kpi-value">${value}</span>
         <span class="kpi-hint">${hint}</span>

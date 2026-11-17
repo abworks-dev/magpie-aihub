@@ -37,7 +37,7 @@ export function settings(raw = {}) {
       throw new Error(`Invalid ${key}: expected ${min}..${max}`);
     if (key !== 'maxMultiplier' && key !== 'minBalance' && !Number.isInteger(o[key])) throw new Error(`${key} must be an integer`);
   }
-  if (!['economy', 'balanced', 'speed', 'price'].includes(o.strategy)) throw new Error('Invalid strategy');
+  if (!['economy', 'balanced', 'speed', 'price', 'value', 'reliable'].includes(o.strategy)) throw new Error('Invalid strategy');
   if (!['responses', 'chat'].includes(o.defaultApi)) throw new Error('Invalid defaultApi');
   if ([o.requirePassed, o.autoCreateKeys, o.monitorEnabled].some(v => typeof v !== 'boolean')) throw new Error('Boolean option expected');
   if (!Array.isArray(o.platforms) || !o.platforms.length || !o.platforms.every(validPlatform) || new Set(o.platforms).size !== o.platforms.length) throw new Error('Invalid platforms');

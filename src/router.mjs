@@ -69,7 +69,21 @@ export class Router {
     if (this.o.strategy === 'speed') return ms;
     if (this.o.strategy === 'economy') return c.multiplier;
     if (this.o.strategy === 'price') return this.priceKnown(c) ? c.metrics.realPrice : Infinity;
+    if (this.o.strategy === 'value') return this.valueScore(c, ms);
+    if (this.o.strategy === 'reliable') return this.reliableScore(c);
     return c.multiplier * (1 + Math.min(ms, 60000) / 10000);
+  }
+  // 性价比：真实价格（缺价时退回名义倍率）× 延迟惩罚 × 失败惩罚。
+  valueScore(c, ms = this.latency.get(c.groupId) ?? c.latency ?? 30000) {
+    const price = this.priceKnown(c) ? c.metrics.realPrice : c.multiplier;
+    const success = Number.isFinite(c.metrics?.successRate) ? Math.min(1, Math.max(0, c.metrics.successRate)) : 1;
+    return price * (1 + Math.min(ms, 60000) / 10000) * (1 + 3 * (1 - success));
+  }
+  // 稳定优先：失败率每差 1% 相当于 1e4 的代价，价格只用来打破同分。
+  reliableScore(c) {
+    const success = Number.isFinite(c.metrics?.successRate) ? Math.min(1, Math.max(0, c.metrics.successRate)) : 1;
+    const price = this.priceKnown(c) ? c.metrics.realPrice : c.multiplier;
+    return (1 - success) * 1e6 + price;
   }
   prune() {
     const now = this.now();
