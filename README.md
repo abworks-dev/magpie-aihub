@@ -2,7 +2,7 @@
 
 面向 **aihub.top 普通消费者** 的 Magpie Provider 插件。用自己的账户或分组 Key，在 Magpie 中提供一个 `aihub-auto` 上游入口，按倍率和延迟选组、保留会话线路、在首次响应前有限重试。
 
-**版本：v0.5.9（预发布）。** 当前实现覆盖 `openai`、`deepseek`、`zhipu`、`kimi`、`grok`、`gemini` 六个平台；非 OpenAI 模型使用 `platform::model` 命名空间，仅在**同平台、同模型**的分组间 failover。Gemini 可显式选择 Responses 或原生 Gemini 协议，其他平台支持 Responses / Chat Completions。外部平台接口依据公开文档与公开代码核对，**不代表六平台真实调用均已实测**。v0.3.0 新增账户余额卡、每账户 Key 上限与余额阈值暂停建 Key；v0.3.1 在页面令牌过期时自动重载一次，并把服务端拒绝快照的 `error.code` 显示在监控页，便于区分令牌过期与入口代理改写。
+**版本：v0.6.0（预发布）。** 当前实现覆盖 `openai`、`deepseek`、`zhipu`、`kimi`、`grok`、`gemini` 六个平台；非 OpenAI 模型使用 `platform::model` 命名空间，仅在**同平台、同模型**的分组间 failover。Gemini 可显式选择 Responses 或原生 Gemini 协议，其他平台支持 Responses / Chat Completions。外部平台接口依据公开文档与公开代码核对，**不代表六平台真实调用均已实测**。v0.3.0 新增账户余额卡、每账户 Key 上限与余额阈值暂停建 Key；v0.3.1 在页面令牌过期时自动重载一次，并把服务端拒绝快照的 `error.code` 显示在监控页，便于区分令牌过期与入口代理改写。
 
 已通过 192 项本地测试，并在隔离的官方 Magpie 0.1.3250 `magpie web` 实例中经真实浏览器打开：页面经插件服务代理加载、`magpie.ready` 连通、监控标签跳转到服务页并在沙箱 iframe 内读到 `/snapshot`。余额/消耗接口来自已登录 AIHub 页面的实际响应样本，但页面余额卡与 Key 上限保护只在合成快照和本地 Edge 渲染中验证。官方 Magpie 0.1.3250 隔离检查涵盖插件加载、合成凭据登录、六平台 8 个模型与三种 SDK 注册。真实生产实例联调、真实 AIHub 账户与计费推理仍未验证。独立 MIT 实现，不复制许可不明项目代码。图标取自 [AIHub 官方站点](https://aihub.top/) 公开页面的 PNG favicon，内嵌到元数据与页面；品牌图像权利归原站点。
 
@@ -93,6 +93,7 @@ github:abworks-dev/magpie-aihub
 | `maxKeysPerAccount` | `8` | 插件专用 Key 总数上限（1–32），是唯一的 Key 数量闸门；达到后不再新建，已有 Key 继续可用 |
 | `keysPerPlatform` | `0` | 每个平台最多占几把专用 Key（0–32，`0` = 不限制）。分组多的平台不会吃满整个候选池；已有 Key 的分组始终可用 |
 | `reuseBias` | `0.25` | 复用溢价：已有 Key 的分组贵不超过这个比例时优先复用，避免为省一点钱多建 Key；`0` = 只按价格排序 |
+| `allowedGroups` | 空 | 只在这些 AIHub 分组里选路（设置页的可视化清单点选即可）；留空表示不限制。锁定后不会再为新分组创建 Key |
 | `minBalance` | `0` | 0 关闭；账户余额低于该值时暂停新建 Key，不删除已有 Key |
 | `dailyBudget` | `0` | 每日花费上限（与「真实价格」同单位），按响应 `usage` 与分组真实价格累计；0 关闭；超限的请求直接返回 429 `daily_budget_exceeded` |
 | `priceAlertRatio` | `0.2` | 分组真实价格相对上次观测变化超过该比例（0.2 = 20%）时在监控页提示；只提示，不参与路由 |

@@ -134,6 +134,7 @@
       const { id } = modelIdentity(model);
       return model.api ? `${id}|${model.api}` : id;
     }).join('\n');
+    renderGroupPicker();
   }
 
   function invalid(id, text) {
@@ -160,6 +161,75 @@
       invalid(id, `${label}须为英文逗号分隔的正整数 ID，不能有空项。`);
     }
     return [...new Set(parts.map(Number))];
+  }
+
+  // ---- group picker ------------------------------------------------------
+  // The text input stays the source of truth (it is what gets saved), the list
+  // is a convenience layer that reads from the last snapshot and writes back.
+
+  function pickedGroups() {
+    try { return readGroups('allowedGroups', '仅允许分组'); } catch { return []; }
+  }
+
+  function setPickedGroups(list) {
+    const input = $('allowedGroups');
+    if (!input) return;
+    input.value = [...new Set(list)].sort((a, b) => a - b).join(', ');
+    setDirty(true);
+    renderGroupPicker();
+  }
+
+  function renderGroupPicker() {
+    const list = $('group-list');
+    if (!list) return;
+    const count = $('group-picker-count');
+    const all = groups();
+    if (!all.length) {
+      list.innerHTML = '<p class="empty">打开「监控」页加载一次分组后，这里会列出可点选的分组。</p>';
+      if (count) count.textContent = '尚未加载分组';
+      return;
+    }
+    const chosen = new Set(pickedGroups());
+    const needle = String($('group-search')?.value ?? '').trim().toLowerCase();
+    const onlyEligible = Boolean($('group-only-eligible')?.checked);
+    const rows = all
+      .filter(group => !onlyEligible || group.eligible === true)
+      .filter(group => !needle || (group.groupId + ' ' + (group.name ?? '') + ' ' + (group.platform ?? '')).toLowerCase().includes(needle))
+      .sort((a, b) => Number(b.eligible === true) - Number(a.eligible === true) || a.groupId - b.groupId);
+    if (count) {
+      count.textContent = chosen.size
+        ? '已锁定 ' + chosen.size + ' 个分组 · 只在这些组里选路'
+        : '未限制：留空表示全部满足条件的分组都可能被选中';
+    }
+    list.innerHTML = rows.slice(0, 200).map(group => {
+      const on = chosen.has(group.groupId);
+      const tone = group.eligible === true ? 'pill-ok' : 'pill-off';
+      const state = group.eligible === true ? '可用' : ((group.reasons ?? [])[0] ?? '被排除');
+      const account = group.account ? '<span class="pick-account">' + escapeHtml(group.account) + '</span>' : '';
+      return '<button type="button" class="pick' + (on ? ' is-on' : '') + '" data-group="' + group.groupId + '" aria-pressed="' + on + '">'
+        + '<span class="pick-id">#' + group.groupId + '</span>'
+        + '<span class="pick-name">' + escapeHtml(group.name ?? '分组 ' + group.groupId) + '</span>'
+        + '<span class="pick-meta">' + escapeHtml(platformLabel[group.platform] ?? group.platform ?? '—') + ' · ×' + decimal(group.multiplier, 3) + account + '</span>'
+        + '<span class="pill ' + tone + '">' + escapeHtml(state) + '</span>'
+        + '</button>';
+    }).join('') || '<p class="empty">没有匹配的分组，换个关键词试试。</p>';
+  }
+
+  function wireGroupPicker() {
+    const list = $('group-list');
+    if (list) list.addEventListener('click', event => {
+      const button = event.target?.closest?.('.pick');
+      if (!button) return;
+      const id = Number(button.dataset.group);
+      if (!Number.isSafeInteger(id)) return;
+      const chosen = new Set(pickedGroups());
+      if (chosen.has(id)) chosen.delete(id); else chosen.add(id);
+      setPickedGroups([...chosen]);
+    });
+    const search = $('group-search');
+    if (search) search.addEventListener('input', () => renderGroupPicker());
+    const only = $('group-only-eligible');
+    if (only) only.addEventListener('change', () => renderGroupPicker());
   }
 
   function readModels() {
@@ -240,6 +310,8 @@
   function setDirty(value) {
     state.dirty = value;
     if (dirtyNote) dirtyNote.textContent = value ? '有未保存的更改。' : '设置只保存在此插件的非敏感选项里。';
+    const badge = $('dirty-badge');
+    if (badge) badge.hidden = !value;
   }
 
   // ---- views -------------------------------------------------------------
@@ -254,6 +326,7 @@
       $(view).hidden = !isActive;
     }
     if (name === 'monitor') openMonitor();
+    else renderGroupPicker();
   }
 
   function serviceUrl() {
@@ -344,6 +417,7 @@
       }
       state.snapshot = await response.json();
       renderSnapshot();
+      renderGroupPicker();
     } catch (error) {
       state.snapshot = null;
       $('monitor-updated').textContent = '';
@@ -647,6 +721,7 @@
       button.textContent = '🙈';
     } catch { /* keep the masked label */ }
   });
+  wireGroupPicker();
   $('monitor-filters').addEventListener('click', event => {
     const target = event.target?.closest?.('[data-filter]');
     if (!target) return;

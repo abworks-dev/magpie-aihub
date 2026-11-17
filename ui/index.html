@@ -89,7 +89,7 @@
             <section class="block" aria-labelledby="groups-title">
               <div class="block-head">
                 <h2 id="groups-title">分组范围</h2>
-                <p>用 AIHub 分组 ID 限定参与路由的分组。</p>
+                <p>限定哪些 AIHub 分组参与路由；点选后由插件固定在这些组里选路，不再新建 Key。</p>
               </div>
               <div class="grid">
                 <label class="field">
@@ -100,8 +100,18 @@
                 <label class="field">
                   <span class="field-label">仅允许分组 <span class="optional">可选</span></span>
                   <input id="allowedGroups" name="allowedGroups" type="text" placeholder="留空表示不限分组" autocomplete="off" spellcheck="false">
-                  <small>留空仍受倍率与其他条件约束。</small>
+                  <small>可以直接填 ID，也可以用下面的清单点选；留空仍受倍率与其他条件约束。</small>
                 </label>
+              </div>
+              <div id="group-picker" class="picker">
+                <div class="picker-head">
+                  <input id="group-search" type="search" placeholder="按分组名、ID 或平台筛选…" autocomplete="off" aria-label="筛选分组">
+                  <label class="picker-toggle"><input id="group-only-eligible" type="checkbox"><span>只看当前可用</span></label>
+                  <span id="group-picker-count" class="picker-count">打开「监控」页加载一次分组</span>
+                </div>
+                <div id="group-list" class="picker-list" role="listbox" aria-multiselectable="true" aria-label="可选分组">
+                  <p class="empty">打开「监控」页加载一次分组后，这里会列出可点选的分组。</p>
+                </div>
               </div>
               <div class="switches">
                 <label class="switch">
@@ -208,8 +218,9 @@
               <p class="note">服务只监听回环地址，页面经 Magpie 的插件服务入口访问；在 <code>magpie web</code> 下浏览器会由 Magpie 代理转发，无需额外开放端口。端口被占用时页面会显示宿主的重试提示，换一个端口即可。</p>
             </section>
 
-            <div class="save-row">
+            <div id="save-row" class="save-row">
               <p id="dirty-note">设置只保存在此插件的非敏感选项里。</p>
+              <span id="dirty-badge" class="dirty-badge" hidden>有未保存的修改</span>
             </div>
           </fieldset>
         </div>

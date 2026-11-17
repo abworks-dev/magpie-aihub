@@ -210,3 +210,81 @@ fieldset:disabled { opacity: .6; }
   .topbar-actions { width: 100%; justify-content: flex-end; }
   .routes li { grid-template-columns: 64px minmax(0, 1fr); row-gap: 2px; }
 }
+
+/* ---- picker, save bar and layout refinements ---------------------------- */
+
+.dirty-badge {
+  padding: 2px 8px; border-radius: 999px; font-size: 11px;
+  color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--warn) 28%, var(--line));
+}
+.save-row {
+  position: sticky; bottom: 0; z-index: 10;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 4px; padding: 12px 2px;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--line);
+}
+
+.picker { margin-top: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+.picker-head {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 12px; border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-2) 70%, var(--surface));
+}
+.picker-head input[type="search"] {
+  flex: 1 1 220px; min-width: 160px; padding: 6px 9px;
+  border: 1px solid var(--line-strong); border-radius: 7px;
+  background: var(--bg); color: var(--fg); font: inherit;
+}
+.picker-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11.5px; }
+.picker-count { margin-left: auto; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.picker-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 6px; max-height: 320px; overflow: auto; padding: 10px; margin: 0;
+}
+.pick {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 4px 8px;
+  padding: 8px 10px; text-align: left; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg); color: var(--fg); font: inherit;
+}
+.pick:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.pick.is-on {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg));
+}
+.pick-id { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 11px; }
+.pick-name { font-weight: 560; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-meta { grid-column: 2 / 3; color: var(--muted); font-size: 11px; }
+.pick-account { margin-left: 6px; }
+.pick .pill { grid-column: 3 / 4; grid-row: 1 / 2; }
+
+/* ---- wide-screen layout: cards in two columns --------------------------- */
+@media (min-width: 1000px) {
+  .app { max-width: 1180px; }
+  #controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+  #controls > .block {
+    padding: 18px 20px 20px; border: 1px solid var(--line); border-radius: 12px;
+    background: var(--surface);
+  }
+  #controls > .block:first-of-type { padding-top: 18px; }
+  #controls > .block:nth-of-type(2),
+  #controls > .block:last-of-type,
+  #controls > .save-row { grid-column: 1 / -1; }
+  #controls > .block:nth-of-type(2) .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #controls > .block:nth-of-type(2) { padding-bottom: 8px; }
+}
+
+.kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.monitor-body table { width: 100%; border-collapse: collapse; }
+.monitor-body thead th {
+  position: sticky; top: 44px; z-index: 2;
+  background: color-mix(in srgb, var(--surface) 96%, var(--bg));
+  box-shadow: inset 0 -1px 0 var(--line);
+}
+@media (max-width: 720px) {
+  .picker-list { grid-template-columns: 1fr; max-height: 260px; }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
