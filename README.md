@@ -2,7 +2,7 @@
 
 面向 **aihub.top 普通消费者** 的 Magpie Provider 插件。用自己的账户或分组 Key，在 Magpie 中提供一个 `aihub-auto` 上游入口，按倍率和延迟选组、保留会话线路、在首次响应前有限重试。
 
-**版本：v0.4.9（预发布）。** 当前实现覆盖 `openai`、`deepseek`、`zhipu`、`kimi`、`grok`、`gemini` 六个平台；非 OpenAI 模型使用 `platform::model` 命名空间，仅在**同平台、同模型**的分组间 failover。Gemini 可显式选择 Responses 或原生 Gemini 协议，其他平台支持 Responses / Chat Completions。外部平台接口依据公开文档与公开代码核对，**不代表六平台真实调用均已实测**。v0.3.0 新增账户余额卡、每账户 Key 上限与余额阈值暂停建 Key；v0.3.1 在页面令牌过期时自动重载一次，并把服务端拒绝快照的 `error.code` 显示在监控页，便于区分令牌过期与入口代理改写。
+**版本：v0.5.0（预发布）。** 当前实现覆盖 `openai`、`deepseek`、`zhipu`、`kimi`、`grok`、`gemini` 六个平台；非 OpenAI 模型使用 `platform::model` 命名空间，仅在**同平台、同模型**的分组间 failover。Gemini 可显式选择 Responses 或原生 Gemini 协议，其他平台支持 Responses / Chat Completions。外部平台接口依据公开文档与公开代码核对，**不代表六平台真实调用均已实测**。v0.3.0 新增账户余额卡、每账户 Key 上限与余额阈值暂停建 Key；v0.3.1 在页面令牌过期时自动重载一次，并把服务端拒绝快照的 `error.code` 显示在监控页，便于区分令牌过期与入口代理改写。
 
 已通过 192 项本地测试，并在隔离的官方 Magpie 0.1.3250 `magpie web` 实例中经真实浏览器打开：页面经插件服务代理加载、`magpie.ready` 连通、监控标签跳转到服务页并在沙箱 iframe 内读到 `/snapshot`。余额/消耗接口来自已登录 AIHub 页面的实际响应样本，但页面余额卡与 Key 上限保护只在合成快照和本地 Edge 渲染中验证。官方 Magpie 0.1.3250 隔离检查涵盖插件加载、合成凭据登录、六平台 8 个模型与三种 SDK 注册。真实生产实例联调、真实 AIHub 账户与计费推理仍未验证。独立 MIT 实现，不复制许可不明项目代码。图标取自 [AIHub 官方站点](https://aihub.top/) 公开页面的 PNG favicon，内嵌到元数据与页面；品牌图像权利归原站点。
 
@@ -70,7 +70,7 @@ github:abworks-dev/magpie-aihub
 | `grok` | `grok::MODEL_ID` | `responses` / `chat` |
 | `gemini` | `gemini::MODEL_ID` | `responses` / `gemini`（原生） |
 
-设置页模型行可写 `deepseek::MODEL_ID|chat`、`gemini::MODEL_ID|gemini`；JSON 配置可写 `{ "id": "gemini::MODEL_ID", "api": "gemini" }`。非 OpenAI ID 必须标明平台，显式 `platform` 与 ID 命名空间须一致。上游把 `platform:model`（单冒号）或裸模型 ID 交给插件时同样可以路由：单冒号按平台命名空间解析，裸 ID 在已启用平台里按分组公布的模型查找；都找不到时 503 文案会带上各分组被排除的原因与计数（如 `over the multiplier cap ×8`），便于直接调整倍率。协议决定宿主 SDK 与请求形态，不做任意协议转换；远端是否支持该模型/协议需另行验证。插件发往上游前剥离内部命名空间，始终保持相同平台和原始模型 ID，不能以跨平台或换模型方式降级。
+设置页模型行可写 `deepseek::MODEL_ID|chat`、`gemini::MODEL_ID|gemini`；JSON 配置可写 `{ "id": "gemini::MODEL_ID", "api": "gemini" }`。非 OpenAI ID 必须标明平台，显式 `platform` 与 ID 命名空间须一致。上游把 `platform:model`（单冒号）或裸模型 ID 交给插件时同样可以路由：单冒号按平台命名空间解析，裸 ID 在已启用平台里按分组公布的模型查找；都找不到时 503 文案会带上各分组被排除的原因与计数（如 `over the multiplier cap ×8`），便于直接调整倍率。协议决定宿主 SDK 与请求形态；除 Gemini 之外不做协议转换。Gemini 分组是唯一的例外：宿主用 Responses 或 Chat Completions 调 `gemini::MODEL_ID` 时，插件把请求翻译成原生 `generateContent`（流式用 `streamGenerateContent?alt=sse`），再把候选文本译回调用方协议——非流式整段翻译，流式按 SSE 逐事件翻译（`response.output_text.delta` 或 `chat.completion.chunk`）。原生 Gemini 调用（`/v1beta/models/…`）原样透传，不做改动。远端是否支持该模型/协议需另行验证。插件发往上游前剥离内部命名空间，始终保持相同平台和原始模型 ID，不能以跨平台或换模型方式降级。
 
 ## 常用设置
 

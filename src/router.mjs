@@ -3,6 +3,7 @@ import { ORIGIN } from './config.mjs';
 import { validPlatform, publicModelId, modelDescriptor, bareModelId, splitModelId } from './platforms.mjs';
 import { keyFailure } from './errors.mjs';
 import { proxyFor } from './proxy.mjs';
+import { geminiPath, geminiStream, fromGeminiResponse, toGeminiRequest } from './gemini.mjs';
 
 const digest = text => createHash('sha256').update(text).digest('hex');
 const errorResponse = (message, status = 503, code = 'routing_failed') => Response.json({ error: { type: 'aihub_routing_error', code, message } }, { status });
@@ -344,6 +345,10 @@ export class Router {
       candidates = candidates.slice(0, Math.max(1, this.o.poolSize));
       const poolBlocked = beforePool.length - candidates.length;
       let attempts = 0, keyMismatch = 0;
+      let payload = {};
+      try { payload = bytes?.length ? JSON.parse(bytes) : {}; } catch { payload = {}; }
+      const streaming = payload?.stream === true;
+      const inboundPath = url.pathname === '/v1/chat/completions' ? 'chat' : 'responses';
       for (const candidate of candidates) {
         signal.throwIfAborted();
         if (attempts >= this.o.maxAttempts) break;
@@ -365,9 +370,15 @@ export class Router {
           continue;
         }
         attempts++;
-        const headers = new Headers({ 'content-type': 'application/json', ...(native ? { 'x-goog-api-key': key.key } : { authorization: `Bearer ${key.key}` }) });
+        // A native Gemini call already speaks the protocol; only the OpenAI shapes are translated.
+        const gemini = !native && (candidate.platform ?? 'openai') === 'gemini';
+        const headers = new Headers(gemini
+          ? { 'content-type': 'application/json', 'x-goog-api-key': key.key }
+          : { 'content-type': 'application/json', ...(native ? { 'x-goog-api-key': key.key } : { authorization: `Bearer ${key.key}` }) });
         // Deliberate allowlist: never leak Magpie/client credentials, cookies or internal session IDs.
-        for (const name of ['accept', 'openai-beta']) if (request.headers.has(name)) headers.set(name, request.headers.get(name));
+        if (!gemini) for (const name of ['accept', 'openai-beta']) if (request.headers.has(name)) headers.set(name, request.headers.get(name));
+        const target = gemini ? `${ORIGIN}${geminiPath(model, streaming)}` : `${ORIGIN}${url.pathname}${url.search}`;
+        const payloadBytes = gemini ? JSON.stringify(toGeminiRequest(payload, inboundPath)) : bytes;
         const attempt = new AbortController();
         const attemptSignal = AbortSignal.any([signal, attempt.signal]);
         const timer = setTimeout(() => attempt.abort(new Error('First-byte timeout')), this.o.firstByteTimeoutMs);
@@ -375,9 +386,8 @@ export class Router {
         const began = this.now();
         let response, reader;
         try {
-          const target = `${ORIGIN}${url.pathname}${url.search}`;
           const proxy = proxyFor(target);
-          response = await this.fetcher(target, { method: 'POST', headers, body: bytes, signal: attemptSignal, redirect: 'error', ...(proxy ? { proxy } : {}) });
+          response = await this.fetcher(target, { method: 'POST', headers, body: payloadBytes, signal: attemptSignal, redirect: 'error', ...(proxy ? { proxy } : {}) });
           if (!response.ok) {
             this.recordRoute(candidate, model, `http_${response.status}`);
             clearTimeout(timer);
@@ -398,6 +408,24 @@ export class Router {
             } catch {}
             return errorResponse(`AIHub rejected the request with HTTP ${response.status}${detail} (POST ${url.pathname} via group ${candidate.groupId})`, response.status);
           }
+          // Gemini speaks generateContent, so a non-streaming call is translated
+          // whole instead of being piped through.
+          if (gemini && !streaming) {
+            clearTimeout(timer);
+            const raw = await response.text();
+            let json;
+            try { json = JSON.parse(raw); } catch { throw new Error('Gemini returned a body that is not JSON'); }
+            const meta = json?.usageMetadata ?? {};
+            this.charge(candidate, (Number(meta.promptTokenCount) || 0) + (Number(meta.candidatesTokenCount) || 0));
+            const duration = this.now() - began;
+            this.latency.set(candidate.groupId, (this.latency.get(candidate.groupId) ?? duration) * 0.8 + duration * 0.2);
+            if (session) { this.sessions.set(session, { groupId: candidate.groupId, until: this.now() + this.o.sessionTtlMs }); this.prune(); }
+            this.praise(candidate.groupId);
+            this.recordRoute(candidate, model, 'success');
+            return new Response(JSON.stringify(fromGeminiResponse(json, publicModelId('gemini', model), inboundPath)), {
+              status: 200, headers: { 'content-type': 'application/json; charset=utf-8' },
+            });
+          }
           reader = response.body?.getReader();
           if (!reader) throw new Error('Empty upstream response');
           const first = await reader.read();
@@ -415,6 +443,8 @@ export class Router {
           // Once the first byte is handed to the host, no replay is ever attempted.
           // The same pass counts tokens for the local cost estimate; it never edits bytes.
           const decoder = new TextDecoder();
+          const encode = text => new TextEncoder().encode(text);
+          const translator = gemini ? geminiStream(inboundPath, publicModelId('gemini', model)) : null;
           const usage = { input: 0, output: 0 };
           let tail = '';
           const observe = chunk => {
@@ -429,14 +459,24 @@ export class Router {
             }
             tail = text.slice(-400);
           };
-          observe(first.value);
+          if (!translator) observe(first.value);
           let firstPending = true;
           const stream = new ReadableStream({
             pull: async controller => {
               try {
-                if (firstPending) { firstPending = false; controller.enqueue(first.value); return; }
+                if (firstPending) {
+                  firstPending = false;
+                  if (translator) controller.enqueue(encode(translator.push(decoder.decode(first.value, { stream: true }))));
+                  else controller.enqueue(first.value);
+                  return;
+                }
                 const next = await reader.read();
-                if (next.done) { this.charge(candidate, usage.input + usage.output); reader.releaseLock(); controller.close(); }
+                if (next.done) {
+                  if (translator) { const used = translator.usage(); controller.enqueue(encode(translator.end())); this.charge(candidate, used.input + used.output); }
+                  else this.charge(candidate, usage.input + usage.output);
+                  reader.releaseLock(); controller.close();
+                }
+                else if (translator) controller.enqueue(encode(translator.push(decoder.decode(next.value, { stream: true }))));
                 else { observe(next.value); controller.enqueue(next.value); }
               } catch {
                 this.penalize(candidate.groupId);
@@ -449,7 +489,8 @@ export class Router {
             cancel: async reason => { attempt.abort(); await reader.cancel(reason).catch(() => {}); },
           });
           const out = new Headers();
-          for (const name of ['content-type', 'cache-control']) if (response.headers.has(name)) out.set(name, response.headers.get(name));
+          if (translator) out.set('content-type', 'text/event-stream; charset=utf-8');
+          else for (const name of ['content-type', 'cache-control']) if (response.headers.has(name)) out.set(name, response.headers.get(name));
           return new Response(stream, { status: response.status, headers: out });
         } catch {
           clearTimeout(timer);

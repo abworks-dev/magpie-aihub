@@ -64,17 +64,29 @@ test('same-model failover stays inside each of the six platforms even with cheap
     rows.push(candidate(platform, 100), candidate(platform, 101, { multiplier: 0.11 }));
     // Even a same-platform route must serve this exact upstream model.
     rows.push(candidate(platform, 102, { multiplier: 0, models: ['other-model'] }));
-    const f = fixture(rows, {}, (_url, _init, count) => new Response(count === 1 ? 'busy' : 'ok', { status: count === 1 ? 429 : 200 }));
+    // Gemini groups are reached through generateContent, so the fixture answers
+    // in that protocol instead of echoing the OpenAI body.
+    const native = platform === 'gemini';
+    const f = fixture(rows, {}, (_url, _init, count) => new Response(count === 1
+      ? 'busy'
+      : native ? JSON.stringify({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }) : 'ok', { status: count === 1 ? 429 : 200 }));
     const body = { model: publicId(platform), input: 'offline fixture' };
     const response = await f.router.fetch(post('/v1/responses', body, { 'x-aihub-auto-session': 'shared-session' }));
     assert.equal(response.status, 200);
-    assert.equal(await response.text(), 'ok');
+    if (native) assert.equal((await response.json()).output[0].content[0].text, 'ok');
+    else assert.equal(await response.text(), 'ok');
     assert.deepEqual(f.prepared.map(c => [c.platform, c.groupId]), [[platform, 100], [platform, 101]]);
     assert.deepEqual(f.probed, [100, 101]);
     assert.equal(f.calls.length, 2);
     for (const { url, init } of f.calls) {
-      assert.equal(url, `${ORIGIN}/v1/responses`);
-      assert.deepEqual(JSON.parse(Buffer.from(init.body).toString()), { ...body, model });
+      if (native) {
+        assert.equal(url, `${ORIGIN}/v1beta/models/${model}:generateContent`);
+        assert.deepEqual(JSON.parse(Buffer.from(init.body).toString()).contents, [{ role: 'user', parts: [{ text: 'offline fixture' }] }]);
+        assert.equal(init.headers.get('authorization'), null);
+      } else {
+        assert.equal(url, `${ORIGIN}/v1/responses`);
+        assert.deepEqual(JSON.parse(Buffer.from(init.body).toString()), { ...body, model });
+      }
       assert.equal(init.headers.get('x-aihub-auto-session'), null);
     }
   });
