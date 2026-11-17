@@ -100,6 +100,23 @@ test('a wallet total with no cost still names the calls it counted', async () =>
   assert.deepEqual(card.windows.map((w) => w.display), ['7 次请求 · $1.50', '未报告花费 · 5 次请求']);
 });
 
+test('a run row of zero gives way to the wallet row it sits beside', async () => {
+  const card = await usageCard({
+    account: {
+      data: { mode: 'managed', identity: 'ab***@example.test' },
+      billingInfo: async () => ({
+        balanceKnown: true,
+        balance: 97.06,
+        platforms: [],
+        usage: { requests: 1308, cost: 46.35 },
+      }),
+    },
+    router: { spend: { usd: 0 }, counters: { requests: 0 } },
+  }, {});
+
+  assert.deepEqual(card.windows, [{ name: '累计消耗', display: '$46.35 · 1308 次请求', used: null, aside: true }]);
+});
+
 test('a daily budget the user set is shown when AIHub names no allowance', async () => {
   const card = await usageCard(managed({ balanceKnown: false, platforms: [] }), { dailyBudget: 6 });
 

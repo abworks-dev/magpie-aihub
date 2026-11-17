@@ -121,9 +121,14 @@ export async function usageCard(item, options, { signal } = {}) {
     periodWindow('本月', budgets(platforms, 'monthlyLimit', 'monthlyUsage')),
   ].filter(Boolean);
   // No platform publishes a limit (an organization or quota-only account, or an
-  // AIHub that answers nothing about quotas): the card still names the calls
-  // this plugin made and what the wallet itself has spent rather than sitting
-  // empty.
-  card.windows = windows.length ? windows : [spendWindow(item, options), walletWindow(billing.usage)].filter(Boolean);
+  // AIHub that answers nothing about quotas): the card still names what the
+  // wallet itself has spent rather than sitting empty. A run row that only says
+  // "0 requests · $0.00" (usually a plugin that has just restarted) is dropped
+  // when the wallet row can speak instead.
+  const rows = [spendWindow(item, options), walletWindow(billing.usage)].filter(Boolean);
+  const spent = finite(item?.router?.spend?.usd) ?? 0;
+  const calls = finite(item?.router?.counters?.requests) ?? 0;
+  if (rows.length > 1 && rows[0].name === '本次运行' && spent === 0 && calls === 0) rows.shift();
+  card.windows = windows.length ? windows : rows;
   return card;
 }
