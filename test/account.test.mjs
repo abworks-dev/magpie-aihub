@@ -421,3 +421,29 @@ test('a rejected refresh reports an expired session instead of a bare 401', asyn
   await assert.rejects(account.call('/api/v1/groups/available'), error =>
     error.name === 'SessionExpired' && error.code === 'session_expired' && error.status === 401);
 });
+
+test('the candidate pool size no longer caps the number of group keys', async () => {
+  const account = new Account(managed(), {
+    save: async () => {},
+    fetcher: async (_url, init) => {
+      if (init.method === 'POST') {
+        const body = JSON.parse(init.body);
+        return json({ id: 200 + body.group_id, key: `k-${body.group_id}`, group_id: body.group_id, name: body.name });
+      }
+      return json([]);
+    },
+  });
+  const first = await account.keyFor(group, options({ poolSize: 1, maxKeysPerAccount: 4 }));
+  const second = await account.keyFor({ ...group, groupId: 43 }, options({ poolSize: 1, maxKeysPerAccount: 4 }));
+  assert.equal(first.groupId, 42);
+  assert.equal(second.groupId, 43);
+  assert.equal(account.data.keys.length, 2);
+});
+
+test('the per-account key limit is the one that stops a new key', async () => {
+  const account = new Account(managed({ keys: [{ groupId: 42, platform: 'openai', key: 'k', remoteId: 1, owned: true }] }), {
+    save: async () => {},
+    fetcher: async () => json([]),
+  });
+  await assert.rejects(account.keyFor({ ...group, groupId: 43 }, options({ poolSize: 32, maxKeysPerAccount: 1 })), { code: 'key_cap_reached' });
+});

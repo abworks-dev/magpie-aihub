@@ -2,7 +2,7 @@
 
 面向 **aihub.top 普通消费者** 的 Magpie Provider 插件。用自己的账户或分组 Key，在 Magpie 中提供一个 `aihub-auto` 上游入口，按倍率和延迟选组、保留会话线路、在首次响应前有限重试。
 
-**版本：v0.4.5（预发布）。** 当前实现覆盖 `openai`、`deepseek`、`zhipu`、`kimi`、`grok`、`gemini` 六个平台；非 OpenAI 模型使用 `platform::model` 命名空间，仅在**同平台、同模型**的分组间 failover。Gemini 可显式选择 Responses 或原生 Gemini 协议，其他平台支持 Responses / Chat Completions。外部平台接口依据公开文档与公开代码核对，**不代表六平台真实调用均已实测**。v0.3.0 新增账户余额卡、每账户 Key 上限与余额阈值暂停建 Key；v0.3.1 在页面令牌过期时自动重载一次，并把服务端拒绝快照的 `error.code` 显示在监控页，便于区分令牌过期与入口代理改写。
+**版本：v0.4.6（预发布）。** 当前实现覆盖 `openai`、`deepseek`、`zhipu`、`kimi`、`grok`、`gemini` 六个平台；非 OpenAI 模型使用 `platform::model` 命名空间，仅在**同平台、同模型**的分组间 failover。Gemini 可显式选择 Responses 或原生 Gemini 协议，其他平台支持 Responses / Chat Completions。外部平台接口依据公开文档与公开代码核对，**不代表六平台真实调用均已实测**。v0.3.0 新增账户余额卡、每账户 Key 上限与余额阈值暂停建 Key；v0.3.1 在页面令牌过期时自动重载一次，并把服务端拒绝快照的 `error.code` 显示在监控页，便于区分令牌过期与入口代理改写。
 
 已通过 192 项本地测试，并在隔离的官方 Magpie 0.1.3250 `magpie web` 实例中经真实浏览器打开：页面经插件服务代理加载、`magpie.ready` 连通、监控标签跳转到服务页并在沙箱 iframe 内读到 `/snapshot`。余额/消耗接口来自已登录 AIHub 页面的实际响应样本，但页面余额卡与 Key 上限保护只在合成快照和本地 Edge 渲染中验证。官方 Magpie 0.1.3250 隔离检查涵盖插件加载、合成凭据登录、六平台 8 个模型与三种 SDK 注册。真实生产实例联调、真实 AIHub 账户与计费推理仍未验证。独立 MIT 实现，不复制许可不明项目代码。图标取自 [AIHub 官方站点](https://aihub.top/) 公开页面的 PNG favicon，内嵌到元数据与页面；品牌图像权利归原站点。
 
@@ -52,7 +52,7 @@ github:abworks-dev/magpie-aihub
 
 1. 读取账号可用分组、专属倍率以及供应商大厅；优先使用 v2 大厅接口。
 2. 按六平台目录识别分组，排除未启用平台、下架/不可见/明确检测失败、超倍率及人工排除的分组。
-3. 在用户允许自动创建后，为选中的分组创建 `magpie-aihub-<instance>-g<id>` 专用 Key，上限由 `poolSize` 与 `maxKeysPerAccount` 共同控制；`minBalance` 大于 0 且读到的账户余额低于阈值时暂停新建。
+3. 在用户允许自动创建后，为选中的分组创建 `magpie-aihub-<instance>-g<id>` 专用 Key，总数只由 `maxKeysPerAccount` 控制（`poolSize` 只决定一次路由最多试几个候选分组）；`minBalance` 大于 0 且读到的账户余额低于阈值时暂停新建。
 4. 保存平台归属与未完成创建记录；未知创建结果只重新查询，不盲目重建。
 
 **不会自动删除 Key，不会改绑现有 Key，也不会自动清理其他实例的 Key。** 没有验证 AIHub 建 Key 的额度参数，因此不会声称新 Key 自带消费限额。可在 AIHub 控制台为专用 Key 设置额度，关闭它的自动改组，并避免其他选组工具管理同一把 Key。
@@ -83,11 +83,11 @@ github:abworks-dev/magpie-aihub
 | `maxMultiplier` | `0.16` | 名义倍率硬上限，**0 表示只允许免费组** |
 | `platformCaps` | `{}` | 按平台覆盖上面的上限，例如 `{"deepseek":1,"zhipu":1.2}`；没写到的平台沿用 `maxMultiplier` |
 | `maxAttempts` | `3` | 每次请求最多推理尝试数，包含首次；范围 1–5 |
-| `poolSize` | `4` | 托管专用 Key 数量上限，范围 1–32；手工导入可多于此值。跨平台选路需要每个平台留名额，池满后新平台的分组不再自动建 Key |
+| `poolSize` | `4` | 一次路由最多依次尝试的候选分组数，范围 1–32；它不再限制专用 Key 总数 |
 | `allowedGroups` / `excludedGroups` | `[]` | 分组 ID 白名单/排除名单，排除优先 |
 | `requirePassed` | `false` | 仅使用大厅 `passed` 分组；手工模式不支持 |
 | `autoCreateKeys` | `false` | 允许账户模式按需创建 Key；关闭不撤销已有 Key |
-| `maxKeysPerAccount` | `8` | 插件专用 Key 总数上限（1–32）；达到后不再新建，已有 Key 继续可用 |
+| `maxKeysPerAccount` | `8` | 插件专用 Key 总数上限（1–32），是唯一的 Key 数量闸门；达到后不再新建，已有 Key 继续可用 |
 | `keysPerPlatform` | `0` | 每个平台最多占几把专用 Key（0–32，`0` = 不限制）。分组多的平台不会吃满整个候选池；已有 Key 的分组始终可用 |
 | `minBalance` | `0` | 0 关闭；账户余额低于该值时暂停新建 Key，不删除已有 Key |
 | `dailyBudget` | `0` | 每日花费上限（与「真实价格」同单位），按响应 `usage` 与分组真实价格累计；0 关闭；超限的请求直接返回 429 `daily_budget_exceeded` |

@@ -337,10 +337,13 @@ export class Router {
       }
       // A full managed pool does not create/delete keys just because market rankings move.
       const beforePool = candidates;
-      if (this.account.data.mode === 'managed' && this.account.data.keys.length >= this.o.poolSize)
+      if (this.account.data.mode === 'managed' && this.account.data.keys.length >= this.o.maxKeysPerAccount)
         candidates = candidates.filter(c => this.account.data.keys.some(k => k.groupId === c.groupId));
+      // The pool size bounds how many candidates one request keeps looking at;
+      // it no longer doubles as a key budget.
+      candidates = candidates.slice(0, Math.max(1, this.o.poolSize));
       const poolBlocked = beforePool.length - candidates.length;
-      let attempts = 0;
+      let attempts = 0, keyMismatch = 0;
       for (const candidate of candidates) {
         signal.throwIfAborted();
         if (attempts >= this.o.maxAttempts) break;
@@ -355,7 +358,7 @@ export class Router {
         }
         try {
           const ids = await this.account.modelIds(key, this.o, signal);
-          if (!ids.some(id => bareModelId(id) === model)) continue;
+          if (!ids.some(id => bareModelId(id) === model)) { keyMismatch += 1; continue; }
         } catch {
           signal.throwIfAborted();
           this.penalize(candidate.groupId);
@@ -452,9 +455,10 @@ export class Router {
           if (session) this.sessions.delete(session);
         } finally { clearTimeout(timer); }
       }
-      const note = poolBlocked > 0
-        ? `; ${poolBlocked} more groups have no dedicated key and the pool is full (${this.account.data.keys.length} of ${this.o.poolSize} keys); raise the pool size or revoke an unused key`
-        : '';
+      const notes = [];
+      if (poolBlocked > 0) notes.push(`${poolBlocked} groups have no dedicated key and the pool is full (${this.account.data.keys.length} of ${this.o.maxKeysPerAccount} keys); raise the pool size or revoke an unused key`);
+      if (keyMismatch > 0) notes.push(`${keyMismatch} keyed groups do not serve this model yet, so no key could be tried; raise the pool size so one of them can get its own key`);
+      const note = notes.length ? `; ${notes.join('; ')}` : '';
       const source = ` [source=${JSON.stringify(supplied).slice(0, 48)} hint=${hint || 'none'} bare=${bareModel}]`;
       return errorResponse(this.routeFailure(catalogue.filter(c => (c.platform ?? 'openai') === platform), model, platform, catalogue) + note + source, 503, 'no_eligible_route');
     } catch {
@@ -468,7 +472,7 @@ export class Router {
     signal?.throwIfAborted();
     const ids = new Set();
     if (this.account.data.mode !== 'managed') {
-      for (const key of this.account.data.keys.slice(0, this.o.poolSize)) {
+      for (const key of this.account.data.keys.slice(0, this.o.maxKeysPerAccount)) {
         const platform = key.platform ?? 'openai';
         if (!this.o.platforms.includes(platform)) continue;
         for (const id of await this.account.modelIds(key, this.o, signal)) ids.add(publicModelId(platform, id));
@@ -493,7 +497,7 @@ export class Router {
     }
     // Only dedicated keys already stored for still-permitted catalogue groups
     // can supplement public evidence; never enumerate/adopt unrelated keys.
-    for (const key of this.account.data.keys.slice(0, this.o.poolSize)) {
+    for (const key of this.account.data.keys.slice(0, this.o.maxKeysPerAccount)) {
       const candidate = candidates.find(c => c.groupId === key.groupId);
       if (!candidate || key.owned !== true || candidate.models?.length === 0) continue;
       try {

@@ -13,12 +13,12 @@
 | platformCaps | {}；平台→上限映射 | UI + Router | 每个平台自己的倍率上限，未列出的平台用 maxMultiplier；键只接受 openai/deepseek/zhipu/kimi/grok/gemini |
 | strategy | balanced；economy / balanced / speed / price / value / reliable | UI + Router | 按倍率、倍率×(1+min(ms,60000)/10000)、延迟、真实价格排序；`value` = 价格×(1+min(ms,60000)/10000)×(1+3×(1-成功率))；`reliable` = (1-成功率)×1e6+价格；未知延迟取 30000ms |
 | maxAttempts | 3；整数 1–5 | UI + Router | 推理发送次数含首次；Key / 模型读取不计入；首块前切换可能重复计费 |
-| poolSize | 4；整数 1–32 | UI + Account / Router | managed 保存 Key 上限，池满不换/删 Key；managed 发现不要求已有 Key，已有 Key 补充最多读取 N 个 |
+| poolSize | 4；整数 1–32 | UI + Router | 一次路由最多依次尝试的候选分组数；不限制 Key 总数，池满不换/删 Key |
 | excludedGroups | []；正安全整数数组 | UI + Router | 排除优先 |
 | allowedGroups | []；正安全整数数组 | UI + Router | 空数组不额外限组，仍受其他筛选 |
 | requirePassed | false；boolean | UI + Router | 要求大厅 passed=true；manual 缺该证据，开启会排除全部手工组 |
 | autoCreateKeys | false；boolean | UI + Account | 主动开启才可 POST 创建；关闭不撤销已有 Key |
-| maxKeysPerAccount | 8；整数 1–32 | UI + Account | 插件专用 Key 总数上限；达到后 `key_cap_reached`，不删除已有 Key |
+| maxKeysPerAccount | 8；整数 1–32 | UI + Account | 插件专用 Key 总数上限（唯一闸门）；达到后 `key_cap_reached`，不删除已有 Key |
 | keysPerPlatform | 0；整数 0–32 | UI + Router | 每平台专用 Key 配额，0 表示不限；只限制新建，已有 Key 的分组不受影响 |
 | minBalance | 0；0–100000 有限数 | UI + Account | >0 时余额低于阈值暂停新建 Key（`balance_too_low`）；读取失败不推断余额、不阻塞已有 Key |
 | dailyBudget | 0；0–1000000 有限数 | UI + Router | 每日花费上限，按响应 usage 与分组真实价格累计；0 关闭；超限返回 429 `daily_budget_exceeded` |

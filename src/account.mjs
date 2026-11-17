@@ -139,10 +139,12 @@ export class Account {
       const existing = this.data.keys.find(k => k.groupId === candidate.groupId);
       if (existing) { if (this.dirty) await this.save(); return existing; }
       if (this.data.mode !== 'managed') throw new KeyError('key_not_imported', '此分组没有导入 Key，请在插件连接中导入对应分组 Key。');
-      if (this.data.keys.length >= o.poolSize) throw new KeyError('key_pool_full', '专用 Key 池已满，请增大 poolSize 或使用已有分组。');
+      // One cap only: the per-account key limit. The candidate pool size is a
+      // routing knob, not a key budget, so it must not stop a model the account
+      // is still willing to key.
       if (this.data.keys.length >= o.maxKeysPerAccount) {
         this.note('blocked', candidate.groupId, 'key_cap_reached');
-        throw new KeyError('key_cap_reached', `专用 Key 数量已达上限 ${o.maxKeysPerAccount}（候选池 ${o.poolSize}），请增大 maxKeysPerAccount 或复用已有分组。`);
+        throw new KeyError('key_cap_reached', `专用 Key 数量已达上限 ${o.maxKeysPerAccount}，请增大「每账户 Key 上限」或复用已有分组。`);
       }
       if (o.minBalance > 0) {
         const billing = await this.billingInfo(o, signal);
