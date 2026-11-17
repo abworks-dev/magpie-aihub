@@ -65,6 +65,17 @@ const modelRestriction = value => {
   return [...new Set(value.models)];
 };
 
+// AIHub reports the observed cost and token counts of a probe window rather than
+// a ready-made unit price. Derive USD per 1M tokens so channels stay comparable;
+// an explicit real_price (older payloads) still wins.
+const rangePrice = rc => {
+  const unit = numeric(rc.real_price);
+  if (unit !== undefined) return unit;
+  const tokens = ['input_tokens', 'cache_read_tokens', 'cache_creation_tokens'].reduce((sum, key) => sum + (numeric(rc[key]) ?? 0), 0);
+  const cost = ['input_cost', 'cache_read_cost', 'cache_creation_cost'].reduce((sum, key) => sum + (numeric(rc[key]) ?? 0), 0);
+  return tokens > 0 ? (cost / tokens) * 1e6 : null;
+};
+
 export function normalizeHall(data) {
   return new Map(list(data).flatMap(r => {
     const id = Number(r.group_id);
@@ -74,6 +85,8 @@ export function normalizeHall(data) {
     const stage = detection.stages?.text;
     const textBlocked = ['failed', 'fail', 'error'].includes(stage?.published_state ?? stage?.state);
     const latency = numeric(r.avg_ttft_ms ?? r.range_cache?.avg_ttft_ms);
+    const range = r.range_cache ?? {};
+    const fresh = range.ready === true && range.stale === false;
     return [[id, {
       id, platform: r.platform, available: typeof r.available === 'boolean' ? r.available : undefined,
       visible: r.visible_in_hall !== false, blocked: blocked || textBlocked,
@@ -82,8 +95,8 @@ export function normalizeHall(data) {
       metrics: {
         successRate: numeric(r.success_rates?.['6h'] ?? r.probe_success_rate_6h) ?? null,
         tps: numeric(r.summary_tps ?? r.output_tps) ?? null,
-        cacheHitRate: r.range_cache?.ready === true && r.range_cache?.stale === false ? numeric(r.range_cache.cache_hit_rate) ?? null : null,
-        realPrice: r.range_cache?.ready === true && r.range_cache?.stale === false ? numeric(r.range_cache.real_price) ?? null : null,
+        cacheHitRate: fresh ? numeric(range.cache_hit_rate) ?? null : null,
+        realPrice: fresh ? rangePrice(range) : null,
       },
       latency: latency > 0 ? latency : undefined,
       advertisedModels: Array.isArray(r.model_cards)

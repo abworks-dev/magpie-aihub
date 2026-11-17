@@ -79,7 +79,7 @@ github:abworks-dev/magpie-aihub
 | 选项 | 默认 | 含义 |
 |---|---|---|
 | `platforms` | 六平台全部 | 启用平台列表；仍需有符合条件的组与模型 |
-| `strategy` | `balanced` | `economy` 按名义倍率；`speed` 按首字节延迟；`balanced` 将倍率与延迟相乘评分；`price` 按 AIHub 返回的真实价格（`range_cache.real_price`）排序，缺价的分组不参与，全部缺价时回退为 `economy` |
+| `strategy` | `balanced` | `economy` 按名义倍率；`speed` 按首字节延迟；`balanced` 将倍率与延迟相乘评分；`price` 按真实价格排序，缺价的分组不参与，全部缺价时回退为 `economy` |
 | `maxMultiplier` | `0.16` | 名义倍率硬上限，**0 表示只允许免费组** |
 | `maxAttempts` | `3` | 每次请求最多推理尝试数，包含首次；范围 1–5 |
 | `poolSize` | `4` | 托管专用 Key 数量上限，范围 1–8；手工导入可多于此值 |
@@ -103,7 +103,7 @@ github:abworks-dev/magpie-aihub
 
 服务只监听回环，仅接受 GET/HEAD，并要求精确 `Host`、`Origin` 缺省或为 `null`、无请求体；快照还需要服务注入到页面里的进程级令牌（`x-aihub-service-token`），因此别的站点或被沙箱化的第三方页面无法读取。Cloud 当前仅批准四个静态资源，未批准 service 新路由，不能据此声称生产监控已接通。如果 `magpie web` 前面还有反向代理或入口（Caddy/Nginx/Cloudflare 等），它必须原样转发 `/_magpie/plugin/<32 位 token>/_magpie/service/` 及其下的 `snapshot`、`identity`，并且**不能剥离路径前缀**；只放行 `index.html`、`app.js`、`style.css`、`_magpie/bridge.js` 时，点「监控」会落到代理自己的 404 页（如 Caddy 的 `Not exposed by this Magpie entry.`），这不是插件渲染错误。
 
-快照顶部为账户卡：余额、冻结金额、今日/本月消耗（按平台配额汇总）、累计请求、专用 Key 数量与上限、各平台日/月用量与限额，以及最近建 Key/阻止事件。余额数据以 60 秒间隔读取 `/api/v1/auth/me`、`/api/v1/usage/stats`、`/api/v1/user/platform-quotas`；读取失败时沿用上次快照（最多 10 分钟），并显示 `billing_unavailable`、`billing_access_denied` 或 `billing_sign_in_required` / `billing_session_expired`，不推断数值。接口正常但响应里没有余额字段时（组织或配额账号常见），余额仍显示 `—`，但卡片会标注“该账户未返回余额字段”，与读取失败区分开。`/api/v1/keys` 会返回明文 Key；插件只在恢复本实例创建的专用 Key 时读取该列表（按实例命名精确匹配），不做批量导出、不记录明文。账户卡标题显示脱敏标识（如 `ab***@example.test`），点标题旁的眼睛按钮时才向 `GET /identity` 取一次完整账号（同一页面令牌、只读、不写回快照），再点收起；快照本身始终不含完整标识。
+快照顶部为账户卡：余额、冻结金额、今日/本月消耗（按平台配额汇总）、累计请求、专用 Key 数量与上限、各平台日/月用量与限额，以及最近建 Key/阻止事件。余额数据以 60 秒间隔读取 `/api/v1/auth/me`、`/api/v1/usage/stats`、`/api/v1/user/platform-quotas`；读取失败时沿用上次快照（最多 10 分钟），并显示 `billing_unavailable`、`billing_access_denied` 或 `billing_sign_in_required` / `billing_session_expired`，不推断数值。接口正常但响应里没有余额字段时（组织或配额账号常见），余额仍显示 `—`，但卡片会标注“该账户未返回余额字段”，与读取失败区分开。分组表的“真实价格”由 AIHub 区间窗口的 `range_cache` 折算：窗口内 `input/cache_read/cache_creation` 的成本之和除以 Token 之和，再乘 1e6，得到每百万 Token 的美元价；窗口未就绪、已过期或 Token 为 0 时不显示，也不推断。`/api/v1/keys` 会返回明文 Key；插件只在恢复本实例创建的专用 Key 时读取该列表（按实例命名精确匹配），不做批量导出、不记录明文。账户卡标题显示脱敏标识（如 `ab***@example.test`），点标题旁的眼睛按钮时才向 `GET /identity` 取一次完整账号（同一页面令牌、只读、不写回快照），再点收起；快照本身始终不含完整标识。
 
 快照展示分组可用性/筛选原因、倍率、可得的成功率/TPS/缓存命中率/价格、目录新鲜度、Key 数量及最近 100 条内存路由结果。缺失、未就绪或不可信的指标为 `null`。快照不返回原始认证包、Key、Cookie、请求/响应 body 或会话 ID。监控读取可按需发起远端目录 GET，并可能触发管理令牌刷新与保存；**不会推理探测或创建 Key**（但若自动发现与 `autoCreateKeys` 同时开启，业务请求仍可能触发建 Key）。
 

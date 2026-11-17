@@ -485,7 +485,7 @@
     $('monitor-body').innerHTML = `
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>分组</th><th>平台</th><th class="num">倍率</th><th class="num">成功率</th><th class="num">缓存命中</th><th class="num">TPS</th><th class="num">真实价格</th><th class="num">模型</th><th>状态</th><th class="num">最后使用</th></tr></thead>
+          <thead><tr><th>分组</th><th>平台</th><th class="num">倍率</th><th class="num">成功率</th><th class="num">缓存命中</th><th class="num">TPS</th><th class="num" title="按区间窗口的实际成本与 Token 折算为每百万 Token 美元">真实价格</th><th class="num">模型</th><th>状态</th><th class="num">最后使用</th></tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
       </div>

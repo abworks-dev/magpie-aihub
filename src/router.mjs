@@ -57,7 +57,7 @@ export class Router {
       (!o.requirePassed || c.passed === true) && (this.cooldown.get(c.groupId) ?? 0) <= this.now();
   }
   priceKnown(c) {
-    return Number.isFinite(c.metrics?.realPrice) && c.metrics.realPrice > 0;
+    return Number.isFinite(c.metrics?.realPrice) && c.metrics.realPrice >= 0;
   }
   eligible(c, model, platform = c.platform ?? 'openai', { requirePrice = this.o.strategy === 'price' } = {}) {
     return (c.platform ?? 'openai') === platform && this.eligibleGroup(c) && (!requirePrice || this.priceKnown(c)) &&
