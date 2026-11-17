@@ -410,6 +410,17 @@ test('a bare model id finds the platform that publishes it', async () => {
   assert.equal(calls[0].group, 1);
 });
 
+test("a group without a model list does not capture another platform's bare model", async () => {
+  const rows = [
+    candidate(1, { platform: 'openai', multiplier: 0.02 }),
+    candidate(2, { platform: 'deepseek', models: ['deepseek-flash'], multiplier: 0.5 }),
+  ];
+  const { router, calls } = fixture(rows, { platformCaps: { openai: 0.16, deepseek: 2 } }, { advertised: ['deepseek-flash'] });
+  const { response } = await consume(router, request({ model: 'deepseek-flash' }));
+  assert.equal(response.status, 200);
+  assert.equal(calls[0].group, 2, 'only the platform that lists the model is eligible');
+});
+
 test('an exhausted route names the reason every group was dropped', async () => {
   const { router } = fixture([candidate(1, { multiplier: 5 })], {});
   const { response, text } = await consume(router, request());

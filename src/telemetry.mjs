@@ -55,6 +55,7 @@ export async function monitorSnapshot(runtimes, options, now = Date.now) {
           tps: finite(c.metrics?.tps), realPrice: finite(c.metrics?.realPrice),
           samples: finite(c.metrics?.samples), observedSeconds: finite(c.metrics?.observedSeconds),
           successRate1h: finite(c.metrics?.successRate1h), totalMs: finite(c.metrics?.totalMs),
+          successRateWindow: text(c.metrics?.successRateWindow) || null,
           pingMs: finite(c.metrics?.pingMs), reputation: finite(c.metrics?.reputation),
         },
         models: [...new Set(c.advertisedModels ?? c.models ?? [])].filter(id => typeof id === 'string').slice(0, 200).map(text),

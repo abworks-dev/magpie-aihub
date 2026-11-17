@@ -96,7 +96,10 @@ export function snapshotView(raw) {
             model: safeString(card?.model, 160), alias: safeString(card?.alias, 80),
             price: number(card?.price), health: code(card?.health), sampleCount: number(card?.sampleCount),
           })).filter(card => card.model),
-          metrics: Object.fromEntries(['successRate', 'successRate1h', 'cacheHitRate', 'tps', 'realPrice', 'samples', 'observedSeconds', 'totalMs', 'pingMs', 'reputation'].map(key => [key, number(group?.metrics?.[key])])),
+          metrics: {
+            ...Object.fromEntries(['successRate', 'successRate1h', 'cacheHitRate', 'tps', 'realPrice', 'samples', 'observedSeconds', 'totalMs', 'pingMs', 'reputation'].map(key => [key, number(group?.metrics?.[key])])),
+            successRateWindow: code(group?.metrics?.successRateWindow),
+          },
           models, eligible: bool(group?.eligible), reasons: list(group?.reasons, 16).map(reason => safeString(reason, 160)).filter(Boolean),
           hasKey: bool(group?.hasKey), selectedCount: number(group?.selectedCount),
           cooldownUntil: timestamp(group?.cooldownUntil), lastUsedAt: timestamp(group?.lastUsedAt),

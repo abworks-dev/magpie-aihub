@@ -522,7 +522,7 @@
         <td class="num">${row.multiplier === null || row.multiplier === undefined ? '—' : `×${decimal(row.multiplier, 3)}`}</td>
         <td class="num">${num(row.latency) === null ? '—' : (num(row.latency) / 1000).toFixed(1) + 's'}</td>
         <td class="num" title="${num(row.metrics?.observedSeconds) === null ? '窗口时长未知' : `窗口 ${Math.round(num(row.metrics.observedSeconds) / 60)} 分钟`}">${num(row.metrics?.samples) === null ? '—' : num(row.metrics.samples).toLocaleString('zh-CN')}</td>
-        <td class="num" title="${num(row.metrics?.successRate1h) === null ? '没有 1h 档数据' : `1h 成功率 ${percent(row.metrics.successRate1h)}`}">${percent(row.metrics?.successRate)}</td>
+        <td class="num" title="${row.metrics?.successRateWindow ? `${row.metrics.successRateWindow} 档成功率 ${percent(row.metrics?.successRate)}${row.metrics.successRateWindow === '1h' ? '（大厅当前只给 1h 档）' : ''}` : '大厅未给成功率'}">${percent(row.metrics?.successRate)}</td>
         <td class="num">${percent(row.metrics?.cacheHitRate)}</td>
         <td class="num">${decimal(row.metrics?.tps, 1)}</td>
         <td class="num" title="${num(row.metrics?.reputation) === null ? '大厅未给出评分' : `AIHub 评分 ${decimal(row.metrics.reputation, 2)}`}">${num(row.metrics?.reputation) === null ? '—' : decimal(row.metrics.reputation, 2)}</td>

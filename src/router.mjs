@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { ORIGIN } from './config.mjs';
-import { validPlatform, publicModelId, modelDescriptor, bareModelId } from './platforms.mjs';
+import { validPlatform, publicModelId, modelDescriptor, bareModelId, splitModelId } from './platforms.mjs';
 import { keyFailure } from './errors.mjs';
 import { proxyFor } from './proxy.mjs';
 
@@ -155,9 +155,9 @@ export class Router {
     const unmatched = rows.filter(c => c.models?.some(id => bareModelId(id) === model)).length;
     return `No eligible AIHub route remains within the configured multiplier and attempt limits (platform ${platform}, cap ×${Number(cap).toFixed(3)}, ${rows.length} groups, ${unmatched} list this model: ${top || 'all filtered by platform'})`;
   }
-  eligible(c, model, platform = c.platform ?? 'openai', { requirePrice = this.o.strategy === 'price' } = {}) {
+  eligible(c, model, platform = c.platform ?? 'openai', { requirePrice = this.o.strategy === 'price', strict = false } = {}) {
     return (c.platform ?? 'openai') === platform && this.eligibleGroup(c) && (!requirePrice || this.priceKnown(c)) &&
-      (!c.models || c.models.some(id => bareModelId(id) === model)) &&
+      (strict ? (c.models?.some(id => bareModelId(id) === model) ?? false) : (!c.models || c.models.some(id => bareModelId(id) === model))) &&
       !(c.rejected ?? []).includes(model) && !this.rejected.has(`${c.groupId}:${model}`);
   }
   score(c) {
@@ -231,7 +231,7 @@ export class Router {
       if (request.signal.aborted) throw request.signal.reason;
       return errorResponse(signal.aborted ? 'AIHub routing deadline exceeded' : 'Expected a JSON request within the configured body limit', signal.aborted ? 503 : 400);
     }
-    let platform, model;
+    let platform, model, bareModel = false;
     try {
       if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error();
       const hint = request.headers.get('x-aihub-auto-platform');
@@ -239,6 +239,7 @@ export class Router {
       if (typeof supplied !== 'string' || !supplied) throw new Error();
       const descriptor = modelDescriptor({ id: supplied, ...(hint ? { platform: hint } : native ? { platform: 'gemini' } : {}), api: native ? 'gemini' : url.pathname === '/v1/chat/completions' ? 'chat' : 'responses' });
       platform = descriptor.platform; model = descriptor.modelId;
+      bareModel = !hint && !native && splitModelId(supplied)[0] === undefined;
       if (!validPlatform(platform) || !this.o.platforms.includes(platform) || (native && body.model !== undefined && body.model !== model)) throw new Error();
       if (!native) { body.model = model; bytes = Buffer.from(JSON.stringify(body)); }
     } catch { clearTimeout(budgetTimer); return errorResponse('Invalid or disabled platform/model/protocol combination', 400, 'invalid_platform_model'); }
@@ -255,29 +256,26 @@ export class Router {
       this.counters.requests++;
       this.trackPrices(catalogue);
       if (!this.withinBudget()) return errorResponse('Daily budget reached; raise it in the plugin settings to keep routing today', 429, 'daily_budget_exceeded');
-      let candidates = catalogue.filter(c => this.eligible(c, model, platform)).sort((a, b) => this.score(a) - this.score(b) || a.groupId - b.groupId);
-      // Magpie may forward the model without its namespace; when the bare id only
-      // exists under another platform, follow the id instead of failing the call.
-      // Try priced groups first, then unpriced ones: a platform whose groups have no
-      // price window yet must not disappear just because the strategy prefers prices.
-      if (!candidates.length) {
-        // Only a group that explicitly lists the model counts as evidence for a
-        // platform: a group without a model list must not attract another
-        // platform's model.
+      // Magpie forwards the model without its namespace, so a bare id must follow
+      // the platform that explicitly publishes it. Only when nothing publishes it
+      // do we fall back to the parsed platform and the historical permissive match.
+      let candidates = [];
+      if (bareModel) {
         for (const requirePrice of [true, false]) {
           for (const platformId of this.o.platforms) {
-            if (platformId === platform) continue;
             const rows = catalogue.filter(c => (c.platform ?? 'openai') === platformId &&
               (c.models?.some(id => bareModelId(id) === model) ?? false) &&
               this.eligible(c, model, platformId, { requirePrice }));
             if (!rows.length) continue;
             platform = platformId;
-            candidates = rows.sort((a, b) => this.score(a) - this.score(b) || a.groupId - b.groupId);
+            candidates = rows;
             break;
           }
           if (candidates.length) break;
         }
       }
+      if (!candidates.length) candidates = catalogue.filter(c => this.eligible(c, model, platform));
+      candidates.sort((a, b) => this.score(a) - this.score(b) || a.groupId - b.groupId);
       // A price-first route needs a real price. When AIHub returns none for any
       // group, fall back to the nominal multiplier ranking instead of failing.
       if (!candidates.length && this.o.strategy === 'price')

@@ -88,6 +88,13 @@ function describeHall(rows) {
   console.error(`[aihub-auto] hall row keys: ${keysOf(row)} | success_rates: ${keysOf(row.success_rates)} | model_detection: ${keysOf(row.model_detection)} | range_cache: ${keysOf(row.range_cache)} | model_cards[0]: ${keysOf(card)}`);
 }
 
+const reputationScore = value => {
+  const direct = numeric(value);
+  if (direct !== undefined) return direct;
+  if (value && typeof value === 'object') return numeric(value.score) ?? numeric(value.value) ?? numeric(value.rating) ?? null;
+  return null;
+};
+
 export function normalizeHall(data) {
   const rows = list(data);
   describeHall(rows);
@@ -100,6 +107,8 @@ export function normalizeHall(data) {
     const textBlocked = ['failed', 'fail', 'error'].includes(stage?.published_state ?? stage?.state);
     const latency = numeric(r.avg_ttft_ms ?? r.range_cache?.avg_ttft_ms);
     const range = r.range_cache ?? {};
+    const rate6 = numeric(r.success_rates?.['6h'] ?? r.probe_success_rate_6h);
+    const rate1 = numeric(r.success_rates?.['1h'] ?? r.probe_success_rate_1h);
     const fresh = range.ready === true && range.stale === false;
     return [[id, {
       id, platform: r.platform, available: typeof r.available === 'boolean' ? r.available : undefined,
@@ -107,12 +116,13 @@ export function normalizeHall(data) {
       passed: detection.status === 'passed' ? true : blocked || textBlocked ? false : null, multiplier: numeric(r.rate_multiplier),
       name: typeof r.name === 'string' ? r.name : undefined,
       metrics: {
-        successRate: numeric(r.success_rates?.['6h'] ?? r.probe_success_rate_6h) ?? null,
-        successRate1h: numeric(r.success_rates?.['1h'] ?? r.probe_success_rate_1h) ?? null,
+        successRate: rate6 ?? rate1 ?? null,
+        successRate1h: rate1 ?? null,
+        successRateWindow: rate6 !== undefined ? '6h' : rate1 !== undefined ? '1h' : null,
         tps: numeric(r.summary_tps ?? r.output_tps) ?? null,
         totalMs: numeric(r.avg_total_ms) ?? null,
         pingMs: numeric(r.avg_ping_ms) ?? null,
-        reputation: numeric(r.reputation) ?? null,
+        reputation: reputationScore(r.reputation),
         cacheHitRate: fresh ? numeric(range.cache_hit_rate) ?? null : null,
         realPrice: fresh ? rangePrice(range) : null,
         samples: numeric(range.usage_records) ?? null,

@@ -61,3 +61,11 @@ test('the hall exposes the 1h success rate, the reputation and the model cards',
   assert.equal(entry.cards[0].price, 0.07);
   assert.equal(entry.cards[0].sampleCount, 21);
 });
+
+test('a hall row that only reports the 1h window still shows a rate', () => {
+  const entry = normalizeHall([{ group_id: 41, platform: 'openai', rate_multiplier: 0.06,
+    success_rates: { '1h': 0.83 }, reputation: { score: 4.2 } }]).get(41);
+  assert.equal(entry.metrics.successRate, 0.83);
+  assert.equal(entry.metrics.successRateWindow, '1h');
+  assert.equal(entry.metrics.reputation, 4.2);
+});
