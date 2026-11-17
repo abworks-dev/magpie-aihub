@@ -2,13 +2,13 @@
 
 ## 安装
 
-**v0.3.0 为预发布版本。** 在已登录的 Magpie 插件管理页添加以下 Git 来源：
+**v0.3.1 为预发布版本。** 在已登录的 Magpie 插件管理页添加以下 Git 来源：
 
 ```text
 github:abworks-dev/magpie-aihub
 ```
 
-不带 `#ref` 的写法跟随仓库 main，Magpie 的「更新」才会真正生效。需要复现固定版本时写 `github:abworks-dev/magpie-aihub#v0.3.0`（本版起为轻量标签）：固定 ref 会持续显示「有新版本」，因为 Magpie 比较仓库 HEAD 与已装 commit，而点更新不会改变 pin；这是宿主行为（[yetone/magpie#6952](https://github.com/yetone/magpie/issues/6952)）。
+不带 `#ref` 的写法跟随仓库 main，Magpie 的「更新」才会真正生效。需要复现固定版本时写 `github:abworks-dev/magpie-aihub#v0.3.1`（本版起为轻量标签）：固定 ref 会持续显示「有新版本」，因为 Magpie 比较仓库 HEAD 与已装 commit，而点更新不会改变 pin；这是宿主行为（[yetone/magpie#6952](https://github.com/yetone/magpie/issues/6952)）。
 
 仓库公开，不需向插件提供 GitHub Token。服务器必须能访问 GitHub 及 Magpie 插件运行时。推理路由无需编译或新增代理监听；页面服务随插件启动，设置与只读监控在同一页面。已有验证限于 local mock、官方 CLI 隔离宿主和 Edge 合成代理；真实生产联调未验证。六平台外部接口只经公开文档/公开代码核对，不等于真实六平台实测。
 

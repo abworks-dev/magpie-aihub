@@ -1,6 +1,6 @@
 # 架构
 
-magpie-aihub 是 Magpie 的消费端供应商插件：用用户自己的 AIHub 分组 Key 发送模型请求，在倍率、目录状态和进程内延迟记录范围内选组。供应商 ID 为 `aihub-auto`，远端固定 `https://aihub.top`。v0.3.0 预发布实现覆盖 openai / deepseek / zhipu / kimi / grok / gemini 六平台，仅同平台同模型 failover。
+magpie-aihub 是 Magpie 的消费端供应商插件：用用户自己的 AIHub 分组 Key 发送模型请求，在倍率、目录状态和进程内延迟记录范围内选组。供应商 ID 为 `aihub-auto`，远端固定 `https://aihub.top`。v0.3.1 预发布实现覆盖 openai / deepseek / zhipu / kimi / grok / gemini 六平台，仅同平台同模型 failover。
 
 本文以代码阅读、local mock 与 Edge 合成代理为依据；真实生产联调、真实 AIHub 账号与计费推理尚未验证。外部平台接口只按公开文档/公开代码核对，不代表六平台均已实测。独立 MIT 实现，不复制许可不明代码。
 

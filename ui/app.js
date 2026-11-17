@@ -276,7 +276,26 @@
     try {
       const url = new URL('snapshot', globalThis.location.href);
       const response = await bounded(fetch(url.href, { headers: { accept: 'application/json', 'x-aihub-service-token': token }, cache: 'no-store' }), '读取快照超时', 20000);
-      if (!response.ok) throw new Error(`快照接口返回 ${response.status}`);
+      if (!response.ok) {
+        let payload = null;
+        try { payload = await response.json(); } catch { payload = null; }
+        const code = typeof payload?.error?.code === 'string' ? payload.error.code : '';
+        if (code === 'TOKEN_REJECTED' && reloadForFreshToken()) {
+          $('monitor-updated').textContent = '';
+          $('monitor-summary').innerHTML = '';
+          $('monitor-filters').innerHTML = '';
+          $('monitor-body').innerHTML = '<p class="empty">插件刚重载过，页面令牌已过期，正在重新加载…</p>';
+          return;
+        }
+        const hint = {
+          TOKEN_REJECTED: '页面令牌已过期，请刷新本页',
+          ORIGIN_REJECTED: '请求的 Origin 不是本页，入口代理可能改写或去掉了 Origin',
+          HOST_REJECTED: '请求的 Host 不是回环地址，入口代理需保留宿主对 Host 的重写',
+          PREFLIGHT_REJECTED: '预检被拒，入口代理可能没有转发 CORS 预检',
+        }[code];
+        const label = code ? `快照接口返回 ${response.status}（${code}）` : `快照接口返回 ${response.status}`;
+        throw new Error(hint ? `${label}：${hint}` : label);
+      }
       state.snapshot = await response.json();
       renderSnapshot();
     } catch (error) {
@@ -289,6 +308,22 @@
       state.loading = false;
       $('monitor-refresh').disabled = false;
     }
+  }
+
+  // A plugin reload replaces the page token, so a document opened before the
+  // reload can only recover by asking the host for the current page. Reload at
+  // most once per 15 seconds: without the guard a still-broken page would loop.
+  const RELOAD_KEY = 'aihub-service-reload';
+  function reloadForFreshToken() {
+    const loc = globalThis.location;
+    if (!loc || typeof loc.reload !== 'function') return false;
+    try {
+      const last = Number(globalThis.sessionStorage?.getItem(RELOAD_KEY) ?? 0);
+      if (Number.isFinite(last) && last > 0 && Date.now() - last < 15000) return false;
+      globalThis.sessionStorage?.setItem(RELOAD_KEY, String(Date.now()));
+    } catch { /* an opaque origin has no storage; reload anyway */ }
+    setTimeout(() => loc.reload(), 250);
+    return true;
   }
 
   // ---- monitor rendering -------------------------------------------------

@@ -18,7 +18,7 @@ function harness({ options = {}, failSave = false, withBridge = true, service = 
     }
     return nodes.get(id);
   };
-  const calls = { navigated: undefined, fetch: [] };
+  const calls = { navigated: undefined, fetch: [], reloaded: 0 };
   const element = { dataset: {}, style: { colorScheme: '', props: {}, setProperty(k, v) { this.props[k] = v; } } };
   const context = {
     document: {
@@ -27,7 +27,7 @@ function harness({ options = {}, failSave = false, withBridge = true, service = 
       querySelector: selector => (selector === 'meta[name="aihub-service-token"]' && token ? { content: token } : null),
     },
     setTimeout, clearTimeout, console, URL,
-    location: { href: `https://magpie.example${pathname}`, pathname, replace: url => { calls.navigated = url; } },
+    location: { href: `https://magpie.example${pathname}`, pathname, replace: url => { calls.navigated = url; }, reload: () => { calls.reloaded += 1; } },
     fetch: async url => {
       calls.fetch.push(String(url));
       if (fetchImpl) return fetchImpl(url);
@@ -218,4 +218,46 @@ test('a desktop page without a service entry explains where the loopback page li
   await settle(); await settle();
   assert.equal(h.calls.navigated, undefined);
   assert.match(h.node('monitor-body').innerHTML, /读取快照失败|127\.0\.0\.1:19871/);
+});
+
+test('a rejected page token reloads the page once instead of showing a bare 403', async () => {
+  const h = harness({
+    pathname: '/_magpie/plugin/tok/_magpie/service/', token: 'test-token',
+    fetchImpl: async () => ({ ok: false, status: 403, json: async () => ({ schemaVersion: 1, error: { code: 'TOKEN_REJECTED', message: 'Reload the page' } }) }),
+  });
+  await settle();
+  h.clickTab('monitor');
+  for (let i = 0; i < 5; i += 1) await settle();
+  assert.match(h.node('monitor-body').innerHTML, /正在重新加载/);
+  await new Promise(resolve => setTimeout(resolve, 320));
+  assert.equal(h.calls.reloaded, 1, 'the stale document asks the host for a fresh one');
+  assert.equal(h.calls.fetch.length, 1);
+});
+
+test('an entry-proxy 403 names its guard and never reloads', async () => {
+  const h = harness({
+    pathname: '/_magpie/plugin/tok/_magpie/service/', token: 'test-token',
+    fetchImpl: async () => ({ ok: false, status: 403, json: async () => ({ schemaVersion: 1, error: { code: 'ORIGIN_REJECTED', message: 'The service answers only its own page.' } }) }),
+  });
+  await settle();
+  h.clickTab('monitor');
+  for (let i = 0; i < 5; i += 1) await settle();
+  const body = h.node('monitor-body').innerHTML;
+  assert.match(body, /ORIGIN_REJECTED/);
+  assert.match(body, /Origin/);
+  assert.equal(h.calls.reloaded, 0, 'another origin cannot be fixed by reloading this document');
+});
+
+test('a bare 403 from somewhere else keeps its status code', async () => {
+  const h = harness({
+    pathname: '/_magpie/plugin/tok/_magpie/service/', token: 'test-token',
+    fetchImpl: async () => ({ ok: false, status: 403, json: async () => { throw new Error('not json'); } }),
+  });
+  await settle();
+  h.clickTab('monitor');
+  for (let i = 0; i < 5; i += 1) await settle();
+  const body = h.node('monitor-body').innerHTML;
+  assert.match(body, /快照接口返回 403/);
+  assert.doesNotMatch(body, /TOKEN_REJECTED/);
+  assert.equal(h.calls.reloaded, 0);
 });
