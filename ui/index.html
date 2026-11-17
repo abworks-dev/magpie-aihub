@@ -26,8 +26,10 @@
     </header>
 
     <nav class="tabs" role="tablist" aria-label="页面视图">
-      <button id="tab-settings" class="tab is-active" type="button" role="tab" aria-selected="true" aria-controls="view-settings">设置</button>
-      <button id="tab-monitor" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-monitor">监控</button>
+      <div class="segmented">
+        <button id="tab-settings" class="tab is-active" type="button" role="tab" aria-selected="true" aria-controls="view-settings">设置</button>
+        <button id="tab-monitor" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-monitor">监控</button>
+      </div>
       <span class="tabs-spacer"></span>
       <span class="provider-tag">aihub-auto</span>
     </nav>
@@ -108,6 +110,13 @@
                   <input id="group-search" type="search" placeholder="按分组名、ID 或平台筛选…" autocomplete="off" aria-label="筛选分组">
                   <label class="picker-toggle"><input id="group-only-eligible" type="checkbox"><span>只看当前可用</span></label>
                   <span id="group-picker-count" class="picker-count">打开「监控」页加载一次分组</span>
+                </div>
+                <div class="picker-tools">
+                  <div id="group-platforms" class="picker-chips" role="group" aria-label="按平台筛选分组"></div>
+                  <div class="picker-actions">
+                    <button id="group-select-eligible" class="mini" type="button">全选可用</button>
+                    <button id="group-clear" class="mini" type="button">清空已选</button>
+                  </div>
                 </div>
                 <div id="group-list" class="picker-list" role="listbox" aria-multiselectable="true" aria-label="可选分组">
                   <p class="empty">打开「监控」页加载一次分组后，这里会列出可点选的分组。</p>
@@ -219,8 +228,11 @@
             </section>
 
             <div id="save-row" class="save-row">
-              <p id="dirty-note">设置只保存在此插件的非敏感选项里。</p>
-              <span id="dirty-badge" class="dirty-badge" hidden>有未保存的修改</span>
+              <div class="save-text">
+                <p id="dirty-note">设置只保存在此插件的非敏感选项里。</p>
+                <span id="dirty-badge" class="dirty-badge" hidden>有未保存的修改</span>
+              </div>
+              <button id="save-row-button" class="btn btn-primary" type="button" disabled>保存设置</button>
             </div>
           </fieldset>
         </div>
@@ -250,6 +262,7 @@
     <footer class="footnote">
       <p><strong>运行方式</strong> 会话亲和只保存在插件进程内存里，宿主重载后重置；保存选项可能触发宿主重载。</p>
       <p id="provider-status">供应商 aihub-auto。六平台故障转移保持同一平台与模型；监控只读。</p>
+      <p><strong>存储</strong>设置只保存在此插件的非敏感选项里；底部保存条只在有未保存改动时出现。</p>
       <p>本页不接收凭据、不提供登录、不发送远程分析数据。</p>
     </footer>
   </div>

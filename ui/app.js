@@ -31,7 +31,7 @@
     cooldownMs: [10, 3600000], sessionTtlMs: [1000, 604800000],
     maxSessions: [1, 50000], maxBodyBytes: [1024, 50 * 1024 * 1024],
   };
-  const state = { bridge: null, connected: false, busy: false, dirty: false, view: 'settings', snapshot: null, filter: 'all', loading: false };
+  const state = { bridge: null, connected: false, busy: false, dirty: false, view: 'settings', snapshot: null, filter: 'all', loading: false, pickerPlatform: 'all', sort: { key: 'default', dir: 'asc' } };
 
   function modelIdentity(model) {
     const row = typeof model === 'string' ? { id: model } : model;
@@ -45,6 +45,7 @@
   const $ = id => document.getElementById(id);
   const status = $('status');
   const saveButton = $('save-button');
+  const saveRowButton = $('save-row-button');
   const controls = $('controls');
   const form = $('options-form');
   const dirtyNote = $('dirty-note');
@@ -188,15 +189,26 @@
     if (!list) return;
     const count = $('group-picker-count');
     const all = groups();
+    const tools = document.querySelector('.picker-tools');
+    if (tools) tools.hidden = !all.length;
     if (!all.length) {
       list.innerHTML = '<p class="empty">打开「监控」页加载一次分组后，这里会列出可点选的分组。</p>';
       if (count) count.textContent = '尚未加载分组';
       return;
     }
+    const chips = $('group-platforms');
+    if (chips) {
+      const counts = new Map();
+      for (const group of all) counts.set(group.platform, (counts.get(group.platform) ?? 0) + 1);
+      const items = [['all', '全部', all.length], ...platforms.filter(platform => counts.has(platform)).map(platform => [platform, platformLabel[platform], counts.get(platform)])];
+      chips.innerHTML = items.map(([key, label, count]) =>
+        `<button type="button" class="chip-filter${state.pickerPlatform === key ? ' is-active' : ''}" data-platform="${key}" aria-pressed="${state.pickerPlatform === key}">${escapeHtml(label)}<span>${count}</span></button>`).join('');
+    }
     const chosen = new Set(pickedGroups());
     const needle = String($('group-search')?.value ?? '').trim().toLowerCase();
     const onlyEligible = Boolean($('group-only-eligible')?.checked);
     const rows = all
+      .filter(group => state.pickerPlatform === 'all' || group.platform === state.pickerPlatform)
       .filter(group => !onlyEligible || group.eligible === true)
       .filter(group => !needle || (group.groupId + ' ' + (group.name ?? '') + ' ' + (group.platform ?? '')).toLowerCase().includes(needle))
       .sort((a, b) => Number(b.eligible === true) - Number(a.eligible === true) || a.groupId - b.groupId);
@@ -234,6 +246,21 @@
     if (search) search.addEventListener('input', () => renderGroupPicker());
     const only = $('group-only-eligible');
     if (only) only.addEventListener('change', () => renderGroupPicker());
+    const chips = $('group-platforms');
+    if (chips) chips.addEventListener('click', event => {
+      const button = event.target?.closest?.('[data-platform]');
+      if (!button) return;
+      state.pickerPlatform = button.getAttribute('data-platform') || 'all';
+      renderGroupPicker();
+    });
+    const selectEligible = $('group-select-eligible');
+    if (selectEligible) selectEligible.addEventListener('click', () => {
+      const chosen = new Set(pickedGroups());
+      for (const group of groups()) if (group.eligible === true) chosen.add(group.groupId);
+      setPickedGroups([...chosen]);
+    });
+    const clear = $('group-clear');
+    if (clear) clear.addEventListener('click', () => setPickedGroups([]));
   }
 
   function readModels() {
@@ -308,6 +335,10 @@
     controls.disabled = value || !state.connected;
     saveButton.disabled = value || !state.connected;
     saveButton.textContent = value ? '正在保存…' : '保存设置';
+    if (saveRowButton) {
+      saveRowButton.disabled = value || !state.connected;
+      saveRowButton.textContent = value ? '正在保存…' : '保存设置';
+    }
     form.setAttribute('aria-busy', String(value));
   }
 
@@ -316,6 +347,8 @@
     if (dirtyNote) dirtyNote.textContent = value ? '有未保存的更改。' : '设置只保存在此插件的非敏感选项里。';
     const badge = $('dirty-badge');
     if (badge) badge.hidden = !value;
+    // The bottom bar only exists to catch unsaved edits; hide it otherwise.
+    $('save-row')?.classList.toggle('is-dirty', value);
   }
 
   // ---- views -------------------------------------------------------------
@@ -559,6 +592,49 @@
     return state.filter === 'all' ? rows : rows.filter(row => row.platform === state.filter);
   }
 
+  // Every header is a sort key: the first click sorts ascending, the next flips it.
+  const sortColumns = [
+    { key: 'name', label: '分组', className: '', hint: '', value: row => String(row.name || '') },
+    { key: 'multiplier', label: '倍率', className: 'num', hint: '大厅给出的倍率，悬停看评分', value: row => num(row.multiplier) },
+    { key: 'latency', label: '首字', className: 'num', hint: '大厅样本的首字耗时（TTFT）', value: row => num(row.latency) },
+    { key: 'samples', label: '样本', className: 'num', hint: '区间窗口内的样本数', value: row => num(row.metrics?.samples) },
+    { key: 'successRate', label: '成功率', className: 'num', hint: '', value: row => num(row.metrics?.successRate) },
+    { key: 'cacheHitRate', label: '缓存', className: 'num', hint: '缓存命中率', value: row => num(row.metrics?.cacheHitRate) },
+    { key: 'tps', label: 'TPS', className: 'num', hint: '', value: row => num(row.metrics?.tps) },
+    { key: 'realPrice', label: '价格 $/M', className: 'num', hint: '按区间窗口的实际成本与 Token 折算为每百万 Token 美元', value: row => num(row.metrics?.realPrice) },
+    { key: 'models', label: '模型', className: 'num', hint: '大厅模型卡片里该分组声明的模型数', value: row => (Array.isArray(row.models) ? row.models.length : 0) },
+    { key: 'selectedCount', label: '使用', className: 'num', hint: '当前会话里共享该分组的路由数', value: row => num(row.selectedCount) ?? 0 },
+    { key: 'eligible', label: '状态', className: '', hint: '是否通过全部闸门；悬停看被排除的原因', value: row => (row.eligible === true ? 1 : 0) },
+    { key: 'lastUsedAt', label: '最后使用', className: 'num', hint: '', value: row => num(row.lastUsedAt) },
+  ];
+
+  function orderRows(list) {
+    const column = sortColumns.find(item => item.key === state.sort.key);
+    if (!column) {
+      // The default order puts every usable group first, cheapest multiplier next.
+      return list.sort((a, b) => Number(b.eligible === true) - Number(a.eligible === true) || (a.multiplier ?? 1e9) - (b.multiplier ?? 1e9));
+    }
+    const sign = state.sort.dir === 'desc' ? -1 : 1;
+    return [...list].sort((a, b) => {
+      const left = column.value(a);
+      const right = column.value(b);
+      if (left === null || left === undefined) return right === null || right === undefined ? 0 : 1;
+      if (right === null || right === undefined) return -1;
+      if (typeof left === 'string' || typeof right === 'string') return sign * String(left).localeCompare(String(right), 'zh-CN');
+      return sign * (left - right);
+    });
+  }
+
+  function headHtml() {
+    return sortColumns.map(column => {
+      const active = state.sort.key === column.key;
+      const arrow = active ? (state.sort.dir === 'asc' ? '↑' : '↓') : '';
+      const aria = active ? (state.sort.dir === 'asc' ? 'ascending' : 'descending') : 'none';
+      const hint = column.hint ? ` title="${escapeHtml(column.hint)}"` : '';
+      return `<th scope="col" class="${column.className} sortable${active ? ' is-sorted' : ''}" data-sort="${column.key}" aria-sort="${aria}"${hint}>${column.label}<span class="sort-arrow">${arrow}</span></th>`;
+    }).join('');
+  }
+
   function renderSnapshot() {
     const rows = groups();
     const accountsList = accounts();
@@ -606,7 +682,7 @@
     $('monitor-filters').innerHTML = chips.map(([key, label, count]) =>
       `<button type="button" class="filter${state.filter === key ? ' is-active' : ''}" data-filter="${key}">${label}<span>${count}</span></button>`).join('');
 
-    const list = visibleGroups();
+    const list = orderRows(visibleGroups());
     if (!accountsList.length) {
       $('monitor-body').innerHTML = '<p class="empty">还没有登录的 AIHub 账户。先在 Magpie 里登录 aihub-auto，再回到这里刷新。</p>';
       return;
@@ -615,7 +691,7 @@
       $('monitor-body').innerHTML = '<p class="empty">当前筛选条件下没有分组。</p>';
       return;
     }
-    const rowsHtml = list.sort((a, b) => Number(b.eligible === true) - Number(a.eligible === true) || (a.multiplier ?? 1e9) - (b.multiplier ?? 1e9)).map(row => {
+    const rowsHtml = list.map(row => {
       const reasons = Array.isArray(row.reasons) ? row.reasons : [];
       const stateLabel = row.eligible === true ? '可用' : (row.passed === false || row.detection === 'failed') ? '未通过' : '不可用';
       const why = row.eligible === true || !reasons.length ? '' : `<span class="cell-sub cell-why" title="${escapeHtml(reasons.join('\n'))}">${escapeHtml(reasons[0])}${reasons.length > 1 ? ` +${reasons.length - 1}` : ''}</span>`;
@@ -640,7 +716,7 @@
     $('monitor-body').innerHTML = `
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>分组</th><th class="num" title="大厅给出的倍率，悬停看评分">倍率</th><th class="num" title="大厅样本的首字耗时（TTFT）">首字</th><th class="num" title="区间窗口内的样本数">样本</th><th class="num">成功率</th><th class="num" title="缓存命中率">缓存</th><th class="num">TPS</th><th class="num" title="按区间窗口的实际成本与 Token 折算为每百万 Token 美元">价格 $/M</th><th class="num" title="大厅模型卡片里该分组声明的模型数">模型</th><th class="num" title="当前会话里共享该分组的路由数">使用</th><th title="是否通过全部闸门；悬停看被排除的原因">状态</th><th class="num">最后使用</th></tr></thead>
+          <thead><tr>${headHtml()}</tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
       </div>
@@ -679,6 +755,7 @@
   }
 
   saveButton.addEventListener('click', save);
+  if (saveRowButton) saveRowButton.addEventListener('click', save);
   $('tab-settings').addEventListener('click', () => showView('settings'));
   $('tab-monitor').addEventListener('click', () => showView('monitor'));
   $('monitor-refresh').addEventListener('click', () => loadSnapshot());
@@ -742,6 +819,13 @@
     const target = event.target?.closest?.('[data-filter]');
     if (!target) return;
     state.filter = target.getAttribute('data-filter') || 'all';
+    renderSnapshot();
+  });
+  $('monitor-body').addEventListener('click', event => {
+    const header = event.target?.closest?.('th[data-sort]');
+    if (!header) return;
+    const key = header.getAttribute('data-sort');
+    state.sort = { key, dir: state.sort.key === key && state.sort.dir === 'asc' ? 'desc' : 'asc' };
     renderSnapshot();
   });
 
