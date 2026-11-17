@@ -76,8 +76,22 @@ const rangePrice = rc => {
   return tokens > 0 ? (cost / tokens) * 1e6 : null;
 };
 
+// One-shot schema probe: the hall payload is the only source for these rows, so
+// record which fields AIHub actually sends instead of guessing they are missing.
+let describedHall = false;
+const keysOf = value => value && typeof value === 'object' ? Object.keys(value).slice(0, 40).join(',') : '-';
+function describeHall(rows) {
+  if (describedHall || !rows.length) return;
+  describedHall = true;
+  const row = rows[0];
+  const card = Array.isArray(row.model_cards) ? row.model_cards[0] : undefined;
+  console.error(`[aihub-auto] hall row keys: ${keysOf(row)} | success_rates: ${keysOf(row.success_rates)} | model_detection: ${keysOf(row.model_detection)} | range_cache: ${keysOf(row.range_cache)} | model_cards[0]: ${keysOf(card)}`);
+}
+
 export function normalizeHall(data) {
-  return new Map(list(data).flatMap(r => {
+  const rows = list(data);
+  describeHall(rows);
+  return new Map(rows.flatMap(r => {
     const id = Number(r.group_id);
     if (!Number.isSafeInteger(id) || id < 1) return [];
     const detection = r.model_detection ?? {};
