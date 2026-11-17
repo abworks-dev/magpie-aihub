@@ -14,7 +14,9 @@
 
 `/snapshot` 与页面的服务端断言、图片与 vm 覆盖见下一节；两项 Edge 合成代理回归仍保留在 CI。
 
-生产入口 Caddy 探测（2026-11-17 03:15 +08，未登录、只发 GET）：`/_magpie/plugin/<32hex>/{index.html,app.js,style.css,_magpie/bridge.js}` 转发到 Magpie（无效 token 返回 Magpie 自己的 `404 page not found`），而同一前缀下的 `_magpie/service/`、`_magpie/service/snapshot`、`favicon.ico` 与其他路径返回 Caddy 兜底 `404 Not exposed by this Magpie entry.`。因此从 `magpie.abworks.cn` 打开时，点「监控」会被入口 404 截断；这是入口未放行 service 路径，不是插件渲染错误，处理方式见[安装说明](installation.md#页面服务与-cloud-边界)。
+生产入口 Caddy 探测（2026-11-17 03:15 +08，未登录、只发 GET）：`/_magpie/plugin/<32hex>/{index.html,app.js,style.css,_magpie/bridge.js}` 转发到 Magpie（无效 token 返回 Magpie 自己的 `404 page not found`），而同一前缀下的 `_magpie/service/`、`_magpie/service/snapshot`、`favicon.ico` 与其他路径返回 Caddy 兜底 `404 Not exposed by this Magpie entry.`。因此从 `magpie.abworks.cn` 打开时，点「监控」会被入口 404 截断；这是入口未放行 service 路径，不是插件渲染错误。
+
+入口已于 2026-11-17 16:37 +08 放行：在 `magpie.abworks.cn` 的 `route` 中、兜底 404 之前新增 `@aihub_page_service` 转发（`path_regexp` 匹配 `/_magpie/plugin/[0-9a-f]{32}/_magpie/service(/.*)?`，原样保留前缀、不剥 `/_magpie/service/`），原配置备份为 `Caddyfile.pre-aihub-service-20261117T163704+0800`，`caddy validate` 通过后 reload。复测该前缀（`/`、`/snapshot`、OPTIONS 预检、HEAD）不再命中 Caddy 兜底，而是到达 Magpie 并返回 `404 page not found`（32 个 0 是无效 token）；`/` 仍 401，其他站点不受影响。真实页面 token 的「监控」点检由登录浏览器确认，处理方式见[安装说明](installation.md#页面服务与-cloud-边界)。
 
 CI 于提交 `65e1869`（tag `v0.2.2`）的 [运行 43935911151](https://github.com/abworks-dev/magpie-aihub/actions/runs/43935911151) 中 `node`、`bun`、`magpie-host` 三个任务均通过；本机未安装 Bun，Bun 路径只由 CI 证明。
 
