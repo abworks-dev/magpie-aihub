@@ -262,11 +262,11 @@ export class Router {
       if (request.signal.aborted) throw request.signal.reason;
       return errorResponse(signal.aborted ? 'AIHub routing deadline exceeded' : 'Expected a JSON request within the configured body limit', signal.aborted ? 503 : 400);
     }
-    let platform, model, bareModel = false;
+    let platform, model, bareModel = false, supplied = '', hint = '';
     try {
       if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error();
-      const hint = request.headers.get('x-aihub-auto-platform');
-      const supplied = native ? native[1] : body.model;
+      hint = request.headers.get('x-aihub-auto-platform') ?? '';
+      supplied = native ? native[1] : body.model;
       if (typeof supplied !== 'string' || !supplied) throw new Error();
       const descriptor = modelDescriptor({ id: supplied, ...(hint ? { platform: hint } : native ? { platform: 'gemini' } : {}), api: native ? 'gemini' : url.pathname === '/v1/chat/completions' ? 'chat' : 'responses' });
       platform = descriptor.platform; model = descriptor.modelId;
@@ -290,10 +290,15 @@ export class Router {
       // Magpie forwards the model without its namespace, so a bare id must follow
       // the platform that explicitly publishes it. Only when nothing publishes it
       // do we fall back to the parsed platform and the historical permissive match.
+      // The per-model header Magpie forwards names the platform that model was
+      // published under. Treat it as a preference, not proof: a stale header must
+      // not shadow the platform that actually lists the model today.
+      const inferable = bareModel || (Boolean(hint) && !native && splitModelId(supplied)[0] === undefined);
+      const order = hint && this.o.platforms.includes(hint) ? [hint, ...this.o.platforms.filter(item => item !== hint)] : this.o.platforms;
       let candidates = [];
-      if (bareModel) {
+      if (inferable) {
         for (const requirePrice of [true, false]) {
-          for (const platformId of this.o.platforms) {
+          for (const platformId of order) {
             const rows = catalogue.filter(c => (c.platform ?? 'openai') === platformId &&
               (this.listedModels(c)?.some(id => bareModelId(id) === model) ?? false) &&
               this.eligible(c, model, platformId, { requirePrice }));
@@ -450,7 +455,8 @@ export class Router {
       const note = poolBlocked > 0
         ? `; ${poolBlocked} more groups have no dedicated key and the pool is full (${this.account.data.keys.length} of ${this.o.poolSize} keys); raise the pool size or revoke an unused key`
         : '';
-      return errorResponse(this.routeFailure(catalogue.filter(c => (c.platform ?? 'openai') === platform), model, platform, catalogue) + note, 503, 'no_eligible_route');
+      const source = ` [source=${JSON.stringify(supplied).slice(0, 48)} hint=${hint || 'none'} bare=${bareModel}]`;
+      return errorResponse(this.routeFailure(catalogue.filter(c => (c.platform ?? 'openai') === platform), model, platform, catalogue) + note + source, 503, 'no_eligible_route');
     } catch {
       if (request.signal.aborted) throw request.signal.reason;
       return errorResponse(signal.aborted ? 'AIHub routing deadline exceeded' : 'AIHub catalogue unavailable or no usable route');
