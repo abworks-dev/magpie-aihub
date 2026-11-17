@@ -18,6 +18,8 @@ github:abworks-dev/magpie-aihub
 
 也可使用经核对的 commit 或完整本地仓库。公开仓库无需 GitHub 私有仓库权限；运行 Magpie 的主机仍需能够访问 GitHub。无需编译；推理路由不依赖独立代理，页面与只读监控由插件自己的回环服务提供。详细步骤与限制见[安装与首次验收](documentation/installation.md)。
 
+仓库打有 `magpie-plugin` GitHub topic，Magpie 的「插件 → 发现」会在“非官方插件”区按 star 降序列出本仓库；topic 生效后宿主的搜索结果会缓存约 10 分钟，重启 Magpie web 可立即刷新。本插件未发布到 npm，发现页的 npm 区不会出现。
+
 本项目使用 [Magpie 插件接口](https://usemagpie.ai/docs/zh/plugins) 的密码提示、keyless API authorize、provider.models、静态页面 bridge 与 page.service。安装后仍需核对页面、认证和模型列表；[已有验证记录](documentation/tests.md)区分本版隔离检查与尚未完成的生产验收。
 
 ## 两种接入方式
