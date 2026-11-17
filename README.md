@@ -8,11 +8,13 @@
 
 ## 安装
 
-在 Magpie 插件管理页添加以下固定版本：
+在 Magpie 插件管理页添加以下来源：
 
 ```text
-github:abworks-dev/magpie-aihub#v0.3.0
+github:abworks-dev/magpie-aihub
 ```
+
+不带 `#ref` 的写法跟随仓库 main，Magpie 的「更新」按钮才会真正生效。需要复现某一版时写 `github:abworks-dev/magpie-aihub#v0.3.0`（本版起使用轻量标签）；固定 ref 的安装会持续显示「有新版本」——Magpie 用仓库 HEAD 与已装 commit 比较，而点更新也不会改变 pin，这是宿主行为（[yetone/magpie#6952](https://github.com/yetone/magpie/issues/6952)）。
 
 也可使用经核对的 commit 或完整本地仓库。公开仓库无需 GitHub 私有仓库权限；运行 Magpie 的主机仍需能够访问 GitHub。无需编译；推理路由不依赖独立代理，页面与只读监控由插件自己的回环服务提供。详细步骤与限制见[安装与首次验收](documentation/installation.md)。
 
