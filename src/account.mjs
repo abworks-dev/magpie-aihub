@@ -138,7 +138,7 @@ export class Account {
       if (this.data.keys.length >= o.poolSize) throw new KeyError('key_pool_full', '专用 Key 池已满，请增大 poolSize 或使用已有分组。');
       if (this.data.keys.length >= o.maxKeysPerAccount) {
         this.note('blocked', candidate.groupId, 'key_cap_reached');
-        throw new KeyError('key_cap_reached', `专用 Key 数量已达上限 ${o.maxKeysPerAccount}，请增大 maxKeysPerAccount 或复用已有分组。`);
+        throw new KeyError('key_cap_reached', `专用 Key 数量已达上限 ${o.maxKeysPerAccount}（候选池 ${o.poolSize}），请增大 maxKeysPerAccount 或复用已有分组。`);
       }
       if (o.minBalance > 0) {
         const billing = await this.billingInfo(o, signal);
