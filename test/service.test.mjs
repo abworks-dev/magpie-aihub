@@ -84,6 +84,25 @@ test('the snapshot is sanitized, projects null for missing metrics and leaves no
   assert.ok(!response.text.includes('account one'));
 });
 
+test('masked labels pass through while full identities stay behind the page token', async () => {
+  const masked = snapshot();
+  masked.accounts[0].label = 'ab***@example.test';
+  assert.equal(JSON.parse(snapshotView(masked)).accounts[0].label, 'ab***@example.test');
+  const raw = snapshot();
+  raw.accounts[0].label = 'user@example.com';
+  assert.equal(JSON.parse(snapshotView(raw)).accounts[0].label, '账户1', 'only the masked shape survives');
+
+  const withIds = handler({ getIdentities: async () => ['someone@example.com', 'bad value with spaces', 'admin'] });
+  const denied = await call(withIds, { path: '/identity' });
+  assert.equal(denied.status, 403);
+  assert.equal(JSON.parse(denied.text).error.code, 'TOKEN_REJECTED');
+  const ok = await call(withIds, { path: '/identity', headers: AUTH });
+  assert.equal(ok.status, 200);
+  assert.deepEqual(JSON.parse(ok.text).identities, ['someone@example.com', '', 'admin']);
+  const none = await call(handler(), { path: '/identity', headers: AUTH });
+  assert.deepEqual(JSON.parse(none.text).identities, []);
+});
+
 test('only the page itself may ask: host, origin, token, method, body and path guards', async () => {
   const host = await call(handler(), { path: '/snapshot', headers: { ...AUTH, host: 'evil.example' } });
   assert.equal(host.status, 403);

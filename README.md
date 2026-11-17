@@ -101,9 +101,9 @@ github:abworks-dev/magpie-aihub
 
 设置和监控是**同一个页面**：Magpie 里打开的是静态设置页，它经 `bridge.service` 或监控标签跳到插件自己的回环服务（`127.0.0.1:<monitorPort>`），那里同时提供设置和只读监控。`magpie web` 会把该服务代理到插件页面路径下，所以从别的电脑经 Magpie 访问时不需要另开端口；桌面版 Magpie 不代理服务，页面会提示在本机打开 `http://127.0.0.1:19871/`。`monitorPort: 19871` 只是默认候选，须先核对目标主机端口和宿主服务桥接。
 
-服务只监听回环，仅接受 GET/HEAD，并要求精确 `Host`、`Origin` 缺省或为 `null`、无请求体；快照还需要服务注入到页面里的进程级令牌（`x-aihub-service-token`），因此别的站点或被沙箱化的第三方页面无法读取。Cloud 当前仅批准四个静态资源，未批准 service 新路由，不能据此声称生产监控已接通。如果 `magpie web` 前面还有反向代理或入口（Caddy/Nginx/Cloudflare 等），它必须原样转发 `/_magpie/plugin/<32 位 token>/_magpie/service/` 及其下的 `snapshot`，并且**不能剥离路径前缀**；只放行 `index.html`、`app.js`、`style.css`、`_magpie/bridge.js` 时，点「监控」会落到代理自己的 404 页（如 Caddy 的 `Not exposed by this Magpie entry.`），这不是插件渲染错误。
+服务只监听回环，仅接受 GET/HEAD，并要求精确 `Host`、`Origin` 缺省或为 `null`、无请求体；快照还需要服务注入到页面里的进程级令牌（`x-aihub-service-token`），因此别的站点或被沙箱化的第三方页面无法读取。Cloud 当前仅批准四个静态资源，未批准 service 新路由，不能据此声称生产监控已接通。如果 `magpie web` 前面还有反向代理或入口（Caddy/Nginx/Cloudflare 等），它必须原样转发 `/_magpie/plugin/<32 位 token>/_magpie/service/` 及其下的 `snapshot`、`identity`，并且**不能剥离路径前缀**；只放行 `index.html`、`app.js`、`style.css`、`_magpie/bridge.js` 时，点「监控」会落到代理自己的 404 页（如 Caddy 的 `Not exposed by this Magpie entry.`），这不是插件渲染错误。
 
-快照顶部为账户卡：余额、冻结金额、今日/本月消耗（按平台配额汇总）、累计请求、专用 Key 数量与上限、各平台日/月用量与限额，以及最近建 Key/阻止事件。余额数据以 60 秒间隔读取 `/api/v1/auth/me`、`/api/v1/usage/stats`、`/api/v1/user/platform-quotas`；读取失败时沿用上次快照（最多 10 分钟），并显示 `billing_unavailable`、`billing_access_denied` 或 `billing_sign_in_required` / `billing_session_expired`，不推断数值。`/api/v1/keys` 会返回明文 Key；插件只在恢复本实例创建的专用 Key 时读取该列表（按实例命名精确匹配），不做批量导出、不记录明文。
+快照顶部为账户卡：余额、冻结金额、今日/本月消耗（按平台配额汇总）、累计请求、专用 Key 数量与上限、各平台日/月用量与限额，以及最近建 Key/阻止事件。余额数据以 60 秒间隔读取 `/api/v1/auth/me`、`/api/v1/usage/stats`、`/api/v1/user/platform-quotas`；读取失败时沿用上次快照（最多 10 分钟），并显示 `billing_unavailable`、`billing_access_denied` 或 `billing_sign_in_required` / `billing_session_expired`，不推断数值。`/api/v1/keys` 会返回明文 Key；插件只在恢复本实例创建的专用 Key 时读取该列表（按实例命名精确匹配），不做批量导出、不记录明文。账户卡标题显示脱敏标识（如 `ab***@example.test`），点标题旁的眼睛按钮时才向 `GET /identity` 取一次完整账号（同一页面令牌、只读、不写回快照），再点收起；快照本身始终不含完整标识。
 
 快照展示分组可用性/筛选原因、倍率、可得的成功率/TPS/缓存命中率/价格、目录新鲜度、Key 数量及最近 100 条内存路由结果。缺失、未就绪或不可信的指标为 `null`。快照不返回原始认证包、Key、Cookie、请求/响应 body 或会话 ID。监控读取可按需发起远端目录 GET，并可能触发管理令牌刷新与保存；**不会推理探测或创建 Key**（但若自动发现与 `autoCreateKeys` 同时开启，业务请求仍可能触发建 Key）。
 

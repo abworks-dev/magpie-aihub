@@ -16,7 +16,7 @@ test('monitor projects only catalogue and route metadata, with anonymous account
   }]]);
   const result = await monitorSnapshot(runtimes, settings(), () => 3000);
   assert.equal(reads, 1);
-  assert.equal(result.accounts[0].label, '账户 1');
+  assert.equal(result.accounts[0].label, 'pr***@example.invalid');
   assert.equal(result.accounts[0].groups[0].selectedCount, 1);
   assert.equal(result.accounts[0].groups[0].eligible, false);
   assert.ok(result.accounts[0].groups[0].reasons.includes('超过倍率上限'));

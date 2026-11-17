@@ -347,15 +347,27 @@
   }
   const money = value => num(value) === null ? '—' : '$' + num(value).toFixed(2);
 
+  async function loadIdentity(index) {
+    const token = serviceToken();
+    if (!token) return '';
+    const url = new URL('identity', globalThis.location.href);
+    const response = await bounded(fetch(url.href, { headers: { accept: 'application/json', 'x-aihub-service-token': token }, cache: 'no-store' }), '读取账号超时', 15000);
+    if (!response.ok) return '';
+    const payload = await response.json();
+    const value = Array.isArray(payload?.identities) ? payload.identities[index] : '';
+    return typeof value === 'string' ? value : '';
+  }
+
   function renderAccounts(list) {
     const target = $('monitor-accounts');
     if (!target) return;
     if (!list.length) { target.innerHTML = ''; return; }
-    target.innerHTML = list.map(account => {
+    target.innerHTML = list.map((account, index) => {
       const billing = account.billing;
       const keys = account.keyState ?? {};
       const mode = account.mode === 'manual' ? '手工 Key' : '账户登录';
       const head = '<header><span class="account-name">' + escapeHtml(account.label || '账户') + '</span>'
+        + '<button type="button" class="account-eye" data-account="' + index + '" title="显示完整账号" aria-label="显示完整账号">👁</button>'
         + '<span class="pill pill-neutral">' + mode + '</span>'
         + (account.stale ? '<span class="pill pill-off">目录较旧</span>' : '') + '</header>';
       if (!billing) {
@@ -513,6 +525,27 @@
   $('tab-settings').addEventListener('click', () => showView('settings'));
   $('tab-monitor').addEventListener('click', () => showView('monitor'));
   $('monitor-refresh').addEventListener('click', () => loadSnapshot());
+  $('monitor-accounts').addEventListener('click', async event => {
+    const button = event.target && typeof event.target.closest === 'function' ? event.target.closest('.account-eye') : null;
+    if (!button) return;
+    const card = button.closest('.account-card');
+    const name = card ? card.querySelector('.account-name') : null;
+    if (!name) return;
+    if (button.dataset.shown === '1') {
+      name.textContent = button.dataset.masked || name.textContent;
+      button.dataset.shown = '0';
+      button.textContent = '👁';
+      return;
+    }
+    try {
+      const full = await loadIdentity(Number(button.dataset.account));
+      if (!full) return;
+      button.dataset.masked = name.textContent;
+      name.textContent = full;
+      button.dataset.shown = '1';
+      button.textContent = '🙈';
+    } catch { /* keep the masked label */ }
+  });
   $('monitor-filters').addEventListener('click', event => {
     const target = event.target?.closest?.('[data-filter]');
     if (!target) return;

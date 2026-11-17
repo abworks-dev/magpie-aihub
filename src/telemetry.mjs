@@ -3,6 +3,16 @@ import { SessionExpired } from './errors.mjs';
 const finite = value => typeof value === 'number' && Number.isFinite(value) ? value : null;
 const text = value => typeof value === 'string' ? value.replace(/[\u0000-\u001f]/g, '').slice(0, 160) : '';
 
+export const maskIdentity = identity => {
+  const raw = typeof identity === 'string' ? identity.trim() : '';
+  if (!raw) return '';
+  const at = raw.indexOf('@');
+  const local = [...(at === -1 ? raw : raw.slice(0, at))].slice(0, 2).join('');
+  if (!local) return '';
+  const domain = at === -1 ? '' : raw.slice(at + 1).trim();
+  return domain ? `${local}***@${domain}` : `${local}***`;
+};
+
 export async function monitorSnapshot(runtimes, options, now = Date.now) {
   const accounts = [];
   for (const { account, router } of [...runtimes.values()].slice(0, 32)) {
@@ -40,7 +50,7 @@ export async function monitorSnapshot(runtimes, options, now = Date.now) {
       };
     });
     accounts.push({
-      label: `账户 ${accounts.length + 1}`, mode: account.data.mode,
+      label: maskIdentity(account.data.identity) || `账户 ${accounts.length + 1}`, mode: account.data.mode,
       sourceUpdatedAt: finite(account.snapshot?.at), stale: Boolean(errorCode) || account.remoteStale === true,
       ...(errorCode ? { errorCode } : {}), groups,
       routes: (router.lastRoutes ?? []).slice(-100).map(r => ({ platform: text(r.platform), model: text(r.model), groupId: r.groupId, at: finite(r.at), outcome: text(r.outcome) })),

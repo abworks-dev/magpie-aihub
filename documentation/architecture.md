@@ -18,7 +18,7 @@ magpie-aihub 是 Magpie 的消费端供应商插件：用用户自己的 AIHub �
 | [余额](../src/billing.mjs) | 账户模式读取 /api/v1/auth/me、/api/v1/usage/stats、/api/v1/user/platform-quotas → 余额、消耗与平台限额；不读 Key 列表 |
 | [密钥错误](../src/errors.mjs) | Key 准备稳定错误码与安全消息，不透出原始管理响应 |
 | [快照](../src/telemetry.mjs) | 目录与进程状态 → 白名单监控数据；可按需刷新目录，不推理、不建 Key |
-| [页面服务](../src/service.mjs) | 固定在 127.0.0.1 的 HTTP 服务：提供同一份页面与 GET /snapshot，注入进程级页面令牌，检查 Host / Origin / 方法 / body 并脱敏 |
+| [页面服务](../src/service.mjs) | 固定在 127.0.0.1 的 HTTP 服务：提供同一份页面与 GET /snapshot，注入进程级页面令牌，检查 Host / Origin / 方法 / body 并脱敏；GET /identity 仅在页面令牌下按需返回完整账号标识，快照内只保留 `ab***@host` 形状 |
 | [取消等待](../src/async.mjs) | 调用方可中止共享刷新或队列等待，不为此重复启动共享操作 |
 | [页面](../ui/index.html)、[脚本](../ui/app.js)、[样式](../ui/style.css) | 一份页面两处使用：Magpie 静态页经 bridge 读写非敏感 options；回环服务同源提供设置与只读监控，不接收账户凭据 |
 | [清单](../package.json) | 无依赖 ESM，Node ≥22 / Magpie Bun；crypto、Fetch、Web Streams、HTTP；AI SDK 包名交由宿主解析 |

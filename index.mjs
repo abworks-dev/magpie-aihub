@@ -16,7 +16,11 @@ async function AIHubPlugin({ client }, initialOptions = {}) {
   // (settings and the read-only monitor in one document). A busy port must not
   // break the provider; Magpie then shows its own retry notice for the page.
   try {
-    await startService({ port: options.monitorPort, getSnapshot: () => monitorSnapshot(runtimes, options) });
+    await startService({
+      port: options.monitorPort,
+      getSnapshot: () => monitorSnapshot(runtimes, options),
+      getIdentities: () => [...runtimes.values()].slice(0, 32).map(item => item.account?.data?.identity ?? ''),
+    });
   } catch (error) {
     console.error(`[aihub-auto] page service on 127.0.0.1:${options.monitorPort} did not start: ${error?.message ?? error ?? 'unknown error'}`);
   }

@@ -46,6 +46,23 @@ const timestamp = value => {
   return Number.isFinite(time) ? new Date(time).toISOString() : null;
 };
 
+const accountLabel = (value, index) => {
+  const fallback = `账户${index + 1}`;
+  if (typeof value !== 'string') return fallback;
+  const candidate = value.trim();
+  return /^[^\s@*]{1,8}\*{3}(@[A-Za-z0-9.-]{1,64})?$/.test(candidate) ? candidate : fallback;
+};
+const cleanText = value => typeof value === 'string'
+  ? [...value].filter(ch => { const n = ch.codePointAt(0); return n > 31 && n !== 127; }).join('').trim().slice(0, 160)
+  : '';
+const identitiesView = raw => JSON.stringify({
+  schemaVersion: 1,
+  identities: (Array.isArray(raw) ? raw.slice(0, 32) : []).map(value => {
+    const text = cleanText(value);
+    return /^[A-Za-z0-9._+-]{1,64}@[A-Za-z0-9.-]{1,64}$/.test(text) || /^[A-Za-z0-9._-]{2,64}$/.test(text) ? text : '';
+  }),
+});
+
 // The supplier is sanitized independently: never serialize source objects or errors.
 export function snapshotView(raw) {
   if (!raw || raw.schemaVersion !== 1 || !Array.isArray(raw.accounts)) throw new Error('INVALID_SNAPSHOT');
@@ -55,7 +72,7 @@ export function snapshotView(raw) {
     schemaVersion: 1,
     generatedAt: timestamp(raw.generatedAt),
     accounts: list(raw.accounts, 32).map((account, index) => ({
-      label: `账户${index + 1}`,
+      label: accountLabel(account?.label, index),
       mode: code(account?.mode),
       sourceUpdatedAt: timestamp(account?.sourceUpdatedAt),
       stale: bool(account?.stale),
@@ -114,8 +131,9 @@ export function snapshotView(raw) {
 }
 
 /** Root paths are supplied by Magpie's service proxy; this is not an AIHub proxy. */
-export function serviceHandler({ port, getSnapshot, token = VIEW_TOKEN } = {}) {
+export function serviceHandler({ port, getSnapshot, getIdentities, token = VIEW_TOKEN } = {}) {
   if (typeof getSnapshot !== 'function') throw new TypeError('getSnapshot must be a function');
+  if (getIdentities !== undefined && typeof getIdentities !== 'function') throw new TypeError('getIdentities must be a function');
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new TypeError('Invalid service port');
   if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(token)) throw new TypeError('Invalid service token');
   const sameToken = provided => {
@@ -159,6 +177,22 @@ export function serviceHandler({ port, getSnapshot, token = VIEW_TOKEN } = {}) {
           return error(503, 'SNAPSHOT_UNAVAILABLE', 'The local routing snapshot could not be read. Reload the provider, then retry. No model inference or key creation is performed.', cors);
         }
       }
+      if (path === '/identity') {
+        const cors = { 'Access-Control-Allow-Origin': 'null', Vary: 'Origin' };
+        if (req.method === 'OPTIONS') {
+          const requested = req.headers['access-control-request-headers'];
+          if (req.headers['access-control-request-method'] !== 'GET' || typeof requested !== 'string' || requested.trim().toLowerCase() !== TOKEN_HEADER)
+            return error(403, 'PREFLIGHT_REJECTED', `Only GET with ${TOKEN_HEADER} is permitted.`);
+          return send(204, '', undefined, { ...cors, 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Allow-Headers': TOKEN_HEADER });
+        }
+        if (req.method !== 'GET') return error(405, 'METHOD_REJECTED', 'The identity list is read-only.', { ...cors, Allow: 'GET, OPTIONS' });
+        if (!sameToken(req.headers[TOKEN_HEADER])) return error(403, 'TOKEN_REJECTED', 'Reload the page to obtain its snapshot token.', cors);
+        try {
+          return send(200, identitiesView(typeof getIdentities === 'function' ? await getIdentities() : []), undefined, cors);
+        } catch {
+          return error(503, 'IDENTITY_UNAVAILABLE', 'The local account list could not be read. Reload the provider, then retry.', cors);
+        }
+      }
       const asset = ASSETS.get(path);
       if (!asset) return error(404, 'NOT_FOUND', 'The plugin page has no such file.');
       if (req.method === 'OPTIONS') return error(405, 'METHOD_REJECTED', 'Only the snapshot answers a preflight.', { Allow: 'GET, HEAD' });
@@ -179,13 +213,13 @@ export function serviceHandler({ port, getSnapshot, token = VIEW_TOKEN } = {}) {
  * may be created more than once per host process, and its own page should not
  * look like a port conflict.
  */
-export async function startService({ port, getSnapshot, token } = {}) {
+export async function startService({ port, getSnapshot, getIdentities, token } = {}) {
   if (port !== 0 && started.has(port)) {
     started.get(port).setSource(getSnapshot);
     return started.get(port).server;
   }
-  const live = { getSnapshot };
-  const server = createServer(serviceHandler({ port, getSnapshot: () => live.getSnapshot(), token }));
+  const live = { getSnapshot, getIdentities };
+  const server = createServer(serviceHandler({ port, getSnapshot: () => live.getSnapshot(), getIdentities: () => (typeof live.getIdentities === 'function' ? live.getIdentities() : []), token }));
   await new Promise((resolve, reject) => {
     const settle = error => {
       server.removeListener('listening', settle);
