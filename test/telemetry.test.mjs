@@ -68,3 +68,16 @@ test('a dead session is reported as session_expired, not a generic catalogue fai
   assert.equal(result.accounts[0].errorCode, 'session_expired');
   assert.equal(result.accounts[0].stale, true);
 });
+
+test('the monitor row keeps the sample count and the detection state', async () => {
+  const runtimes = new Map([['i', {
+    account: { data: { mode: 'manual', keys: [] }, catalogue: async () => {}, snapshot: { at: 1 },
+      directoryRows: [{ groupId: 2, platform: 'kimi', multiplier: 0.2, detection: 'failed', metrics: { samples: 88, observedSeconds: 900 }, advertisedModels: ['kimi-k3'] }] },
+    router: { prune() {}, sessions: new Map(), cooldown: new Map(), lastRoutes: [] },
+  }]]);
+  const result = await monitorSnapshot(runtimes, settings(), () => 3000);
+  const group = result.accounts[0].groups[0];
+  assert.equal(group.metrics.samples, 88);
+  assert.equal(group.metrics.observedSeconds, 900);
+  assert.equal(group.detection, 'failed');
+});

@@ -44,7 +44,12 @@ export async function monitorSnapshot(runtimes, options, now = Date.now) {
         groupId: c.groupId, name: text(c.name) || `分组 ${c.groupId}`, platform: text(c.platform) || 'openai',
         multiplier: finite(c.multiplier), available: typeof c.available === 'boolean' ? c.available : null,
         passed: typeof c.passed === 'boolean' ? c.passed : c.blocked === true ? false : null, latency: finite(c.latency),
-        metrics: { successRate: finite(c.metrics?.successRate), cacheHitRate: finite(c.metrics?.cacheHitRate), tps: finite(c.metrics?.tps), realPrice: finite(c.metrics?.realPrice) },
+        detection: text(c.detection) || null,
+        metrics: {
+          successRate: finite(c.metrics?.successRate), cacheHitRate: finite(c.metrics?.cacheHitRate),
+          tps: finite(c.metrics?.tps), realPrice: finite(c.metrics?.realPrice),
+          samples: finite(c.metrics?.samples), observedSeconds: finite(c.metrics?.observedSeconds),
+        },
         models: [...new Set(c.advertisedModels ?? c.models ?? [])].filter(id => typeof id === 'string').slice(0, 200).map(text),
         eligible: reasons.length === 0, reasons, hasKey: account.data.keys.some(k => k.groupId === c.groupId),
         selectedCount, cooldownUntil, lastUsedAt: finite(last?.at),

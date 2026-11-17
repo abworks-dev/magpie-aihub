@@ -38,3 +38,14 @@ test('a stale, unprepared or empty window leaves the real price unknown', () => 
   assert.equal(hall.get(13).metrics.realPrice, null);
   assert.equal(hall.get(14).metrics.realPrice, null);
 });
+
+test('the hall window carries its sample count and detection state', () => {
+  const payload = { group_id: 21, platform: 'deepseek', rate_multiplier: 0.5, avg_ttft_ms: 1200,
+    model_detection: { status: 'passed' },
+    range_cache: { ready: true, stale: false, usage_records: 4321, observed_seconds: 3600, input_tokens: 1000000, input_cost: 0.5 } };
+  const entry = normalizeHall([payload]).get(21);
+  assert.equal(entry.metrics.samples, 4321);
+  assert.equal(entry.metrics.observedSeconds, 3600);
+  assert.equal(entry.detection, 'passed');
+  assert.equal(entry.latency, 1200);
+});

@@ -90,8 +90,8 @@ export function snapshotView(raw) {
         return {
           groupId: id(group?.groupId), name: safeString(group?.name), platform: code(group?.platform),
           multiplier: number(group?.multiplier), available: bool(group?.available), passed: bool(group?.passed),
-          latency: number(group?.latency),
-          metrics: Object.fromEntries(['successRate', 'cacheHitRate', 'tps', 'realPrice'].map(key => [key, number(group?.metrics?.[key])])),
+          latency: number(group?.latency), detection: code(group?.detection),
+          metrics: Object.fromEntries(['successRate', 'cacheHitRate', 'tps', 'realPrice', 'samples', 'observedSeconds'].map(key => [key, number(group?.metrics?.[key])])),
           models, eligible: bool(group?.eligible), reasons: list(group?.reasons, 16).map(reason => safeString(reason, 160)).filter(Boolean),
           hasKey: bool(group?.hasKey), selectedCount: number(group?.selectedCount),
           cooldownUntil: timestamp(group?.cooldownUntil), lastUsedAt: timestamp(group?.lastUsedAt),

@@ -97,7 +97,12 @@ export function normalizeHall(data) {
         tps: numeric(r.summary_tps ?? r.output_tps) ?? null,
         cacheHitRate: fresh ? numeric(range.cache_hit_rate) ?? null : null,
         realPrice: fresh ? rangePrice(range) : null,
+        samples: numeric(range.usage_records) ?? null,
+        observedSeconds: numeric(range.observed_seconds) ?? null,
       },
+      detection: typeof detection.status === 'string' ? detection.status
+        : typeof stage?.state === 'string' ? stage.state
+          : typeof stage?.published_state === 'string' ? stage.published_state : null,
       latency: latency > 0 ? latency : undefined,
       advertisedModels: Array.isArray(r.model_cards)
         ? [...new Set(r.model_cards.filter(m => validModelId(m?.model)).map(m => m.model))] : undefined,

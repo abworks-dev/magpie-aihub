@@ -521,12 +521,14 @@
         <td>${escapeHtml(platformLabel[row.platform] ?? row.platform ?? '—')}</td>
         <td class="num">${row.multiplier === null || row.multiplier === undefined ? '—' : `×${decimal(row.multiplier, 3)}`}</td>
         <td class="num">${num(row.latency) === null ? '—' : (num(row.latency) / 1000).toFixed(1) + 's'}</td>
+        <td class="num" title="${num(row.metrics?.observedSeconds) === null ? '窗口时长未知' : `窗口 ${Math.round(num(row.metrics.observedSeconds) / 60)} 分钟`}">${num(row.metrics?.samples) === null ? '—' : num(row.metrics.samples).toLocaleString('zh-CN')}</td>
         <td class="num">${percent(row.metrics?.successRate)}</td>
         <td class="num">${percent(row.metrics?.cacheHitRate)}</td>
         <td class="num">${decimal(row.metrics?.tps, 1)}</td>
-        <td class="num">${decimal(row.metrics?.realPrice, 4)}</td>
+        <td class="num" title="${num(row.metrics?.realPrice) === null ? '窗口未就绪或没有区间样本' : `$${decimal(row.metrics.realPrice, 4)}/M ≈ ¥${(row.metrics.realPrice * 7.2).toFixed(2)}/M`}">${num(row.metrics?.realPrice) === null ? '—' : `$${decimal(row.metrics.realPrice, 4)}`}</td>
         <td class="num" title="${escapeHtml((Array.isArray(row.models) ? row.models : []).slice(0, 20).join('\n'))}">${Array.isArray(row.models) ? row.models.length : 0}</td>
         <td class="num" title="${row.hasKey ? '本连接已为该分组建了 Key' : '本连接尚未为该分组建 Key'}">${row.selectedCount ?? 0}</td>
+        <td>${row.detection === 'passed' ? '<span class="pill pill-ok">通过</span>' : row.detection === 'failed' || row.passed === false ? '<span class="pill pill-off">失败</span>' : '<span class="cell-sub">未测</span>'}</td>
         <td>${stateText}</td>
         <td class="num">${clock(row.lastUsedAt)}</td>
       </tr>`;
@@ -536,7 +538,7 @@
     $('monitor-body').innerHTML = `
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>分组</th><th>平台</th><th class="num">倍率</th><th class="num" title="大厅样本的平均延迟">平均</th><th class="num">成功率</th><th class="num">缓存命中</th><th class="num">TPS</th><th class="num" title="按区间窗口的实际成本与 Token 折算为每百万 Token 美元">真实价格</th><th class="num">模型</th><th class="num" title="当前会话里共享该分组的路由数">使用</th><th>状态</th><th class="num">最后使用</th></tr></thead>
+          <thead><tr><th>分组</th><th>平台</th><th class="num">倍率</th><th class="num" title="大厅样本的首字耗时（TTFT）">首字</th><th class="num" title="区间窗口内的样本数">样本</th><th class="num">成功率</th><th class="num">缓存命中</th><th class="num">TPS</th><th class="num" title="按区间窗口的实际成本与 Token 折算为每百万 Token 美元，括号内为按 7.2 估算的人民币">真实价格 $/M</th><th class="num">模型</th><th class="num" title="当前会话里共享该分组的路由数">使用</th><th>检测</th><th>状态</th><th class="num">最后使用</th></tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
       </div>
