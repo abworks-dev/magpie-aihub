@@ -30,8 +30,9 @@ export async function monitorSnapshot(runtimes, options, now = Date.now) {
       if (!options.platforms.includes(c.platform ?? 'openai')) reasons.push('平台未启用');
       if (options.excludedGroups.includes(c.groupId)) reasons.push('手工排除');
       if (options.allowedGroups.length && !options.allowedGroups.includes(c.groupId)) reasons.push('不在允许分组中');
+      const cap = options.platformCaps?.[c.platform ?? 'openai'] ?? options.maxMultiplier;
       if (typeof c.multiplier !== 'number') reasons.push('实际倍率未知');
-      else if (c.multiplier > options.maxMultiplier) reasons.push('超过倍率上限');
+      else if (c.multiplier > cap) reasons.push('超过倍率上限');
       if (c.available === false) reasons.push('大厅报告不可用');
       if (c.blocked) reasons.push('模型检测失败');
       if (options.requirePassed && c.passed !== true) reasons.push('没有检测通过证据');

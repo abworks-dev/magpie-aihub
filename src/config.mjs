@@ -5,7 +5,7 @@ export const ORIGIN = 'https://aihub.top';
 export const BASE = `${ORIGIN}/v1`;
 
 const defaults = {
-  maxMultiplier: 0.16, strategy: 'balanced', maxAttempts: 3, poolSize: 4,
+  maxMultiplier: 0.16, platformCaps: {}, strategy: 'balanced', maxAttempts: 3, poolSize: 4,
   minBalance: 0, maxKeysPerAccount: 8, balanceRefreshMs: 60_000,
   refreshMs: 60_000, maxStaleMs: 600_000, firstByteTimeoutMs: 30_000,
   totalTimeoutMs: 90_000, cooldownMs: 30_000, sessionTtlMs: 86_400_000,
@@ -38,6 +38,12 @@ export function settings(raw = {}) {
     if (key !== 'maxMultiplier' && key !== 'minBalance' && !Number.isInteger(o[key])) throw new Error(`${key} must be an integer`);
   }
   if (!['economy', 'balanced', 'speed', 'price', 'value', 'reliable'].includes(o.strategy)) throw new Error('Invalid strategy');
+  if (!o.platformCaps || typeof o.platformCaps !== 'object' || Array.isArray(o.platformCaps)) throw new Error('platformCaps must be an object');
+  for (const [platform, cap] of Object.entries(o.platformCaps)) {
+    if (!validPlatform(platform)) throw new Error(`Unknown platform in platformCaps: ${platform}`);
+    if (typeof cap !== 'number' || !Number.isFinite(cap) || cap < 0 || cap > 100) throw new Error(`Invalid platformCaps.${platform}: expected 0..100`);
+  }
+  o.platformCaps = { ...o.platformCaps };
   if (!['responses', 'chat'].includes(o.defaultApi)) throw new Error('Invalid defaultApi');
   if ([o.requirePassed, o.autoCreateKeys, o.monitorEnabled].some(v => typeof v !== 'boolean')) throw new Error('Boolean option expected');
   if (!Array.isArray(o.platforms) || !o.platforms.length || !o.platforms.every(validPlatform) || new Set(o.platforms).size !== o.platforms.length) throw new Error('Invalid platforms');

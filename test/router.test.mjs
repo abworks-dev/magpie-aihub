@@ -56,6 +56,13 @@ test('price strategy prefers the lowest real price and falls back to the multipl
   assert.equal(bare.calls[0].group, 2, 'no real price falls back to the nominal multiplier');
 });
 
+test('a platform cap overrides the global multiplier ceiling', () => {
+  const { router } = fixture([], { maxMultiplier: 0.16, platformCaps: { deepseek: 1 } });
+  assert.equal(router.eligibleGroup({ groupId: 1, multiplier: 0.5, platform: 'deepseek' }), true, 'deepseek keeps a looser cap');
+  assert.equal(router.eligibleGroup({ groupId: 2, multiplier: 0.5, platform: 'openai' }), false, 'openai keeps the global cap');
+  assert.equal(router.eligibleGroup({ groupId: 3, multiplier: 0.05, platform: 'openai' }), true);
+});
+
 test('value strategy trades a lower price against delay and failure rate', async () => {
   const rows = [
     candidate(1, { multiplier: 0.05, latency: 10, metrics: { realPrice: 0.05, successRate: 0.6 } }),

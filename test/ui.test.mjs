@@ -81,11 +81,13 @@ test('settings load and save model IDs, CSV groups and recognized metadata only'
   assert.equal(h.node('controls').disabled, false);
   h.node('allowedGroups').value = '10, 20';
   h.node('maxMultiplier').value = '0';
+  h.node('platformCaps').value = 'deepseek=1\nzhipu=1.2';
   for (const id of ['maxAttempts', 'poolSize', 'monitorPort']) h.node(id).value = String(h.node(id).value);
   await h.clickSave();
   assert.ok(h.saved(), h.node('status').textContent);
   assert.deepEqual(Array.from(h.saved().allowedGroups), [10, 20]);
   assert.equal(h.saved().maxMultiplier, 0);
+  assert.deepEqual({ ...h.saved().platformCaps }, { deepseek: 1, zhipu: 1.2 });
   assert.equal(h.saved().models[0].context, 4096);
   assert.equal(h.saved().refreshMs, 12345);
   assert.equal(h.saved().accidentalSecret, undefined);

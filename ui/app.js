@@ -13,7 +13,7 @@
     billing_access_denied: '账单接口无权限', billing_unavailable: '账单读取失败',
   };
   const defaults = {
-    strategy: 'balanced', maxMultiplier: 0.16, maxAttempts: 3, poolSize: 4,
+    strategy: 'balanced', maxMultiplier: 0.16, platformCaps: {}, maxAttempts: 3, poolSize: 4,
     excludedGroups: [], allowedGroups: [], requirePassed: false,
     minBalance: 0, maxKeysPerAccount: 8,
     autoCreateKeys: false, defaultApi: 'responses', models: [], monitorPort: 19871,
@@ -76,10 +76,33 @@
     return Array.isArray(value) && value.every(id => validInteger(id, 1, Number.MAX_SAFE_INTEGER));
   }
 
+  function capsToText(caps) {
+    return Object.entries(caps ?? {}).map(([platform, cap]) => `${platform}=${cap}`).join('\n');
+  }
+
+  function textToCaps(value) {
+    const caps = {};
+    for (const part of String(value ?? '').split(/[\n,;]+/)) {
+      const item = part.trim();
+      if (!item) continue;
+      const at = item.indexOf('=');
+      if (at === -1) throw new Error(`无法识别的倍率上限：${item}`);
+      const platform = item.slice(0, at).trim().toLowerCase();
+      const cap = Number(item.slice(at + 1).trim());
+      if (!platforms.includes(platform)) throw new Error(`未知平台：${platform}`);
+      if (!Number.isFinite(cap) || cap < 0 || cap > 100) throw new Error(`倍率上限超出 0–100：${item}`);
+      caps[platform] = cap;
+    }
+    return caps;
+  }
+
   function safeOptions(raw) {
     const result = { ...defaults };
     if (['economy', 'balanced', 'speed', 'price', 'value', 'reliable'].includes(raw.strategy)) result.strategy = raw.strategy;
     if (typeof raw.maxMultiplier === 'number' && Number.isFinite(raw.maxMultiplier) && raw.maxMultiplier >= 0 && raw.maxMultiplier <= 100) result.maxMultiplier = raw.maxMultiplier;
+    if (raw.platformCaps && typeof raw.platformCaps === 'object' && !Array.isArray(raw.platformCaps))
+      result.platformCaps = Object.fromEntries(Object.entries(raw.platformCaps)
+        .filter(([platform, cap]) => platforms.includes(platform) && typeof cap === 'number' && Number.isFinite(cap) && cap >= 0 && cap <= 100));
     if (validInteger(raw.maxAttempts, 1, 5)) result.maxAttempts = raw.maxAttempts;
     if (validInteger(raw.poolSize, 1, 8)) result.poolSize = raw.poolSize;
     if (typeof raw.minBalance === 'number' && Number.isFinite(raw.minBalance) && raw.minBalance >= 0 && raw.minBalance <= 100000) result.minBalance = raw.minBalance;
@@ -97,6 +120,7 @@
   function populate(raw) {
     const options = safeOptions(raw);
     for (const key of ['strategy', 'maxMultiplier', 'maxAttempts', 'poolSize', 'defaultApi', 'monitorPort', 'minBalance', 'maxKeysPerAccount']) $(key).value = String(options[key]);
+    $('platformCaps').value = capsToText(options.platformCaps);
     for (const platform of platforms) $(`platform-${platform}`).checked = options.platforms.includes(platform);
     for (const key of ['excludedGroups', 'allowedGroups']) $(key).value = options[key].join(', ');
     for (const key of ['requirePassed', 'autoCreateKeys']) $(key).checked = options[key];
@@ -167,6 +191,7 @@
       monitorPort: readNumber('monitorPort', '回环端口', 1024, 65535),
       strategy: $('strategy').value,
       maxMultiplier: readNumber('maxMultiplier', '最高倍率', 0, 100, false),
+      platformCaps: (() => { try { return textToCaps($('platformCaps').value); } catch (error) { return invalid('platformCaps', error.message); } })(),
       maxAttempts: readNumber('maxAttempts', '最多尝试次数', 1, 5),
       poolSize: readNumber('poolSize', '候选池大小', 1, 8),
       minBalance: readNumber('minBalance', '余额阈值', 0, 100000, false),

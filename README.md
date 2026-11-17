@@ -81,6 +81,7 @@ github:abworks-dev/magpie-aihub
 | `platforms` | 六平台全部 | 启用平台列表；仍需有符合条件的组与模型 |
 | `strategy` | `balanced` | `economy` 按名义倍率；`speed` 按首字节延迟；`balanced` 将倍率与延迟相乘评分；`price` 按真实价格排序，缺价的分组不参与，全部缺价时回退为 `economy`；`value` 用「价格 × 延迟惩罚 × 失败惩罚」算性价比（缺价时用名义倍率）；`reliable` 先按成功率排序，成功率相同时比价格 |
 | `maxMultiplier` | `0.16` | 名义倍率硬上限，**0 表示只允许免费组** |
+| `platformCaps` | `{}` | 按平台覆盖上面的上限，例如 `{"deepseek":1,"zhipu":1.2}`；没写到的平台沿用 `maxMultiplier` |
 | `maxAttempts` | `3` | 每次请求最多推理尝试数，包含首次；范围 1–5 |
 | `poolSize` | `4` | 托管专用 Key 数量上限，范围 1–8；手工导入可多于此值 |
 | `allowedGroups` / `excludedGroups` | `[]` | 分组 ID 白名单/排除名单，排除优先 |

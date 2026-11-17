@@ -59,6 +59,11 @@
                   <small id="multiplier-help">0 只放行免费组，不是不设上限。</small>
                 </label>
                 <label class="field">
+                  <span class="field-label">按平台倍率上限</span>
+                  <textarea id="platformCaps" name="platformCaps" rows="2" placeholder="openai=0.16&#10;deepseek=1&#10;zhipu=1.2" aria-describedby="platform-caps-help"></textarea>
+                  <small id="platform-caps-help">每行 <code>平台=上限</code>；没写的平台用上面的统一上限。</small>
+                </label>
+                <label class="field">
                   <span class="field-label">最多尝试次数</span>
                   <input id="maxAttempts" name="maxAttempts" type="number" min="1" max="5" step="1" value="3" required>
                   <small>含首次请求，1–5 次。</small>

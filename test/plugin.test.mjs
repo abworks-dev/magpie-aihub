@@ -97,6 +97,9 @@ test('configuration refuses unknown secret fields and invalid numeric values', (
   assert.throws(() => settings({ maxAttempts: 2.5 }), /integer/);
   assert.throws(() => settings({ models: [{ id: 'space bad' }] }), /model id/);
   assert.equal(settings({ maxMultiplier: 0 }).maxMultiplier, 0);
+  assert.throws(() => settings({ platformCaps: { unknown: 1 } }), /Unknown platform/);
+  assert.throws(() => settings({ platformCaps: { deepseek: 200 } }), /platformCaps\.deepseek/);
+  assert.deepEqual(settings({ platformCaps: { deepseek: 1 } }).platformCaps, { deepseek: 1 });
   assert.equal(settings().autoCreateKeys, false);
   assert.throws(() => manualBundle('[{"groupId":1,"key":"fake"}]'), /multiplier/);
 });

@@ -53,8 +53,14 @@ export class Router {
   eligibleGroup(c) {
     const o = this.o;
     return o.platforms.includes(c.platform ?? 'openai') && !o.excludedGroups.includes(c.groupId) && (!o.allowedGroups.length || o.allowedGroups.includes(c.groupId)) &&
-      c.multiplier <= o.maxMultiplier && c.available !== false && !c.blocked &&
+      c.multiplier <= this.capFor(c.platform ?? 'openai') && c.available !== false && !c.blocked &&
       (!o.requirePassed || c.passed === true) && (this.cooldown.get(c.groupId) ?? 0) <= this.now();
+  }
+  // A platform cap overrides the global one, because the same nominal multiplier
+  // means very different money depending on the vendor's base price.
+  capFor(platform) {
+    const cap = this.o.platformCaps?.[platform];
+    return typeof cap === 'number' ? cap : this.o.maxMultiplier;
   }
   priceKnown(c) {
     return Number.isFinite(c.metrics?.realPrice) && c.metrics.realPrice >= 0;
