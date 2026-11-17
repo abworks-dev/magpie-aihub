@@ -171,3 +171,10 @@ test('read-only managed discovery namespaces all six platforms without touching 
   assert.equal(preparations, 0);
   assert.equal(fetches, 0);
 });
+
+test('a one-colon namespace and a bare id resolve to the same platform/model pair', () => {
+  assert.deepEqual([modelDescriptor('deepseek::deepseek-flash').platform, modelDescriptor('deepseek::deepseek-flash').modelId], ['deepseek', 'deepseek-flash']);
+  assert.deepEqual([modelDescriptor('deepseek:deepseek-flash').platform, modelDescriptor('deepseek:deepseek-flash').modelId], ['deepseek', 'deepseek-flash']);
+  assert.equal(modelDescriptor('gpt-5.6').platform, 'openai');
+  assert.equal(modelDescriptor('gpt-5.6:beta').modelId, 'gpt-5.6:beta', 'a colon that is not a platform stays in the id');
+});

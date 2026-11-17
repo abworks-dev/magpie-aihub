@@ -17,7 +17,7 @@ function fixture(rows = [candidate(1), candidate(2)], options = {}, dependencies
     data: { mode: 'manual', keys: rows.map(c => ({ groupId: c.groupId, key: `route-key-${c.groupId}` })) },
     catalogue: async () => rows,
     keyFor: async c => { prepared.push(c.groupId); return { groupId: c.groupId, key: `route-key-${c.groupId}` }; },
-    modelIds: async key => { discovered.push(key.groupId); return [model]; },
+    modelIds: async key => { discovered.push(key.groupId); return dependencies.advertised ?? [model]; },
   };
   const fetcher = async (url, init) => {
     calls.push({ url, init, group: groupOf(init) });
@@ -391,4 +391,28 @@ test('a real price move beyond the alert ratio is recorded for the monitor', () 
   assert.equal(router.priceChanges.length, 1);
   assert.equal(router.priceChanges[0].from, 1);
   assert.equal(router.priceChanges[0].to, 1.5);
+});
+
+test('a model id with a single-colon namespace still reaches its platform group', async () => {
+  const rows = [candidate(1, { platform: 'deepseek', models: ['deepseek-flash'], multiplier: 0.5 })];
+  const { router, calls } = fixture(rows, { platformCaps: { deepseek: 1 } }, { advertised: ['deepseek-flash'] });
+  const { response } = await consume(router, request({ model: 'deepseek:deepseek-flash' }));
+  assert.equal(response.status, 200);
+  assert.equal(calls[0].group, 1);
+  assert.equal(JSON.parse(String(calls[0].init.body)).model, 'deepseek-flash', 'the upstream sees the bare model id');
+});
+
+test('a bare model id finds the platform that publishes it', async () => {
+  const rows = [candidate(1, { platform: 'zhipu', models: ['glm-5.2'], multiplier: 0.5 })];
+  const { router, calls } = fixture(rows, { platformCaps: { zhipu: 1 } }, { advertised: ['glm-5.2'] });
+  const { response } = await consume(router, request({ model: 'glm-5.2' }));
+  assert.equal(response.status, 200);
+  assert.equal(calls[0].group, 1);
+});
+
+test('an exhausted route names the reason every group was dropped', async () => {
+  const { router } = fixture([candidate(1, { multiplier: 5 })], {});
+  const { response, text } = await consume(router, request());
+  assert.equal(response.status, 503);
+  assert.match(text, /over the multiplier cap ×1/);
 });

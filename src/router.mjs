@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { ORIGIN } from './config.mjs';
-import { validPlatform, publicModelId, modelDescriptor } from './platforms.mjs';
+import { validPlatform, publicModelId, modelDescriptor, bareModelId } from './platforms.mjs';
 import { keyFailure } from './errors.mjs';
 import { proxyFor } from './proxy.mjs';
 
@@ -120,9 +120,33 @@ export class Router {
   priceKnown(c) {
     return Number.isFinite(c.metrics?.realPrice) && c.metrics.realPrice >= 0;
   }
+  // The same filters as eligibleGroup/eligible, one reason at a time: a failed
+  // route should say what removed every group instead of returning a bare 503.
+  whyNot(c, model, platform, { requirePrice = false } = {}) {
+    const o = this.o;
+    const rowPlatform = c.platform ?? 'openai';
+    if (rowPlatform !== platform) return 'platform mismatch';
+    if (!o.platforms.includes(rowPlatform)) return 'platform disabled';
+    if (o.excludedGroups.includes(c.groupId)) return 'excluded group';
+    if (o.allowedGroups.length && !o.allowedGroups.includes(c.groupId)) return 'outside the allowed list';
+    if (c.multiplier > this.capFor(rowPlatform)) return 'over the multiplier cap';
+    if (c.available === false || c.blocked) return 'unavailable in the hall';
+    if (o.requirePassed && c.passed !== true) return 'model check not passed';
+    if ((this.cooldown.get(c.groupId) ?? 0) > this.now()) return 'cooling down';
+    if (requirePrice && !this.priceKnown(c)) return 'no real price yet';
+    if (c.models && !c.models.some(id => bareModelId(id) === model)) return 'model not listed';
+    if ((c.rejected ?? []).includes(model) || this.rejected.has(`${c.groupId}:${model}`)) return 'model rejected';
+    return '';
+  }
+  routeFailure(rows, model, platform) {
+    const tally = new Map();
+    for (const c of rows) { const why = this.whyNot(c, model, platform); if (why) tally.set(why, (tally.get(why) ?? 0) + 1); }
+    const top = [...tally].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([why, n]) => `${why} ×${n}`).join(', ');
+    return `No eligible AIHub route remains within the configured multiplier and attempt limits (${rows.length} groups: ${top || 'all filtered by platform'})`;
+  }
   eligible(c, model, platform = c.platform ?? 'openai', { requirePrice = this.o.strategy === 'price' } = {}) {
     return (c.platform ?? 'openai') === platform && this.eligibleGroup(c) && (!requirePrice || this.priceKnown(c)) &&
-      (!c.models || c.models.includes(model)) &&
+      (!c.models || c.models.some(id => bareModelId(id) === model)) &&
       !(c.rejected ?? []).includes(model) && !this.rejected.has(`${c.groupId}:${model}`);
   }
   score(c) {
@@ -221,6 +245,18 @@ export class Router {
       this.trackPrices(catalogue);
       if (!this.withinBudget()) return errorResponse('Daily budget reached; raise it in the plugin settings to keep routing today', 429, 'daily_budget_exceeded');
       let candidates = catalogue.filter(c => this.eligible(c, model, platform)).sort((a, b) => this.score(a) - this.score(b) || a.groupId - b.groupId);
+      // Magpie may forward the model without its namespace; when the bare id only
+      // exists under another platform, follow the id instead of failing the call.
+      if (!candidates.length) {
+        for (const platformId of this.o.platforms) {
+          if (platformId === platform) continue;
+          const rows = catalogue.filter(c => this.eligible(c, model, platformId));
+          if (!rows.length) continue;
+          platform = platformId;
+          candidates = rows.sort((a, b) => this.score(a) - this.score(b) || a.groupId - b.groupId);
+          break;
+        }
+      }
       // A price-first route needs a real price. When AIHub returns none for any
       // group, fall back to the nominal multiplier ranking instead of failing.
       if (!candidates.length && this.o.strategy === 'price')
@@ -343,7 +379,7 @@ export class Router {
           if (session) this.sessions.delete(session);
         } finally { clearTimeout(timer); }
       }
-      return errorResponse('No eligible AIHub route remains within the configured multiplier and attempt limits');
+      return errorResponse(this.routeFailure(catalogue.filter(c => (c.platform ?? 'openai') === platform), model, platform), 503, 'no_eligible_route');
     } catch {
       if (request.signal.aborted) throw request.signal.reason;
       return errorResponse(signal.aborted ? 'AIHub routing deadline exceeded' : 'AIHub catalogue unavailable or no usable route');
