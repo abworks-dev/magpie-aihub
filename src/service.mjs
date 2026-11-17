@@ -121,6 +121,15 @@ export function snapshotView(raw) {
         })),
       } : null,
       billingError: code(account?.billingError) || null,
+      spend: account?.spend ? { day: code(account.spend.day), usd: number(account.spend.usd), tokens: number(account.spend.tokens) } : null,
+      budget: number(account?.budget),
+      priceChanges: list(account?.priceChanges, 5).map(change => ({
+        groupId: id(change?.groupId), name: safeString(change?.name),
+        from: number(change?.from), to: number(change?.to), at: timestamp(change?.at),
+      })),
+      keys: list(account?.keys, 32).map(key => ({
+        groupId: id(key?.groupId), platform: code(key?.platform), owned: bool(key?.owned), lastUsedAt: timestamp(key?.lastUsedAt),
+      })),
       keyEvents: list(account?.keyEvents, 8).map(event => ({
         at: timestamp(event?.at), action: code(event?.action), groupId: id(event?.groupId), code: code(event?.code),
       })).filter(event => event.action),
@@ -137,9 +146,19 @@ export function snapshotView(raw) {
 }
 
 /** Root paths are supplied by Magpie's service proxy; this is not an AIHub proxy. */
-export function serviceHandler({ port, getSnapshot, getIdentities, token = VIEW_TOKEN } = {}) {
+/** Prometheus text for the counters that live in memory; nothing account-specific. */
+export const metricsText = counters => [
+  '# TYPE aihub_accounts gauge', `aihub_accounts ${Number(counters?.accounts ?? 0)}`,
+  '# TYPE aihub_requests_total counter', `aihub_requests_total ${Number(counters?.requests ?? 0)}`,
+  '# TYPE aihub_failures_total counter', `aihub_failures_total ${Number(counters?.failures ?? 0)}`,
+  '# TYPE aihub_spend_usd gauge', `aihub_spend_usd ${Number(counters?.spendUsd ?? 0).toFixed(6)}`,
+  '',
+].join('\n');
+
+export function serviceHandler({ port, getSnapshot, getIdentities, getMetrics, token = VIEW_TOKEN } = {}) {
   if (typeof getSnapshot !== 'function') throw new TypeError('getSnapshot must be a function');
   if (getIdentities !== undefined && typeof getIdentities !== 'function') throw new TypeError('getIdentities must be a function');
+  if (getMetrics !== undefined && typeof getMetrics !== 'function') throw new TypeError('getMetrics must be a function');
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new TypeError('Invalid service port');
   if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(token)) throw new TypeError('Invalid service token');
   const sameToken = provided => {
@@ -197,6 +216,14 @@ export function serviceHandler({ port, getSnapshot, getIdentities, token = VIEW_
           return send(200, identitiesView(typeof getIdentities === 'function' ? await getIdentities() : []), undefined, cors);
         } catch {
           return error(503, 'IDENTITY_UNAVAILABLE', 'The local account list could not be read. Reload the provider, then retry.', cors);
+        }
+      }
+      if (path === '/metrics') {
+        if (req.method !== 'GET') return error(405, 'METHOD_REJECTED', 'The metrics are read-only.', { Allow: 'GET' });
+        try {
+          return send(200, metricsText(typeof getMetrics === 'function' ? await getMetrics() : {}), 'text/plain; charset=utf-8');
+        } catch {
+          return error(503, 'METRICS_UNAVAILABLE', 'The local metrics could not be read. Reload the page, then retry.');
         }
       }
       const asset = ASSETS.get(path);

@@ -45,6 +45,61 @@ export class Router {
     this.account = account; this.o = options; this.fetcher = fetcher; this.now = now;
     this.sessions = new Map(); this.cooldown = new Map(); this.latency = new Map(); this.rejected = new Map();
     this.locks = new Map(); this.lastRoutes = [];
+    this.health = new Map(); this.spend = { day: '', usd: 0, tokens: 0 };
+    this.priceSeen = new Map(); this.priceChanges = []; this.counters = { requests: 0, failures: 0 };
+  }
+  // Circuit state is a sliding window rather than "one failure, one cooldown":
+  // a single blip must not evict a group that has been healthy for hours.
+  window(groupId, now = this.now()) {
+    const entry = this.health.get(groupId) ?? { wins: [], fails: [] };
+    entry.wins = entry.wins.filter(at => at > now - this.o.breakerWindowMs);
+    entry.fails = entry.fails.filter(at => at > now - this.o.breakerWindowMs);
+    this.health.set(groupId, entry);
+    return entry;
+  }
+  penalize(groupId, forceMs) {
+    const now = this.now();
+    const entry = this.window(groupId, now);
+    entry.fails.push(now);
+    this.counters.failures++;
+    if (forceMs) { this.cooldown.set(groupId, now + forceMs); return; }
+    const total = entry.fails.length + entry.wins.length;
+    const rate = entry.fails.length / Math.max(1, total);
+    if (entry.fails.length >= this.o.breakerMinSamples && rate > this.o.breakerFailureRate)
+      this.cooldown.set(groupId, now + this.o.cooldownMs);
+  }
+  praise(groupId) {
+    this.window(groupId).wins.push(this.now());
+    this.cooldown.delete(groupId);
+  }
+  budgetDay(now = this.now()) {
+    const day = new Date(now).toISOString().slice(0, 10);
+    if (this.spend.day !== day) this.spend = { day, usd: 0, tokens: 0 };
+    return day;
+  }
+  withinBudget(now = this.now()) {
+    this.budgetDay(now);
+    return !(this.o.dailyBudget > 0) || this.spend.usd < this.o.dailyBudget;
+  }
+  // Local, immediate estimate: the vendor bills per token, so a routed request
+  // costs tokens × the window's real price. Used for the day budget and the page.
+  charge(candidate, tokens) {
+    if (!Number.isFinite(tokens) || tokens <= 0) return;
+    this.budgetDay();
+    const price = Number.isFinite(candidate.metrics?.realPrice) && candidate.metrics.realPrice >= 0 ? candidate.metrics.realPrice : 0;
+    this.spend.tokens += tokens;
+    this.spend.usd += (tokens / 1e6) * price;
+  }
+  trackPrices(rows) {
+    for (const row of rows) {
+      const price = row.metrics?.realPrice;
+      if (!Number.isFinite(price) || price < 0) continue;
+      const previous = this.priceSeen.get(row.groupId);
+      if (previous > 0 && Math.abs(price - previous) / previous >= this.o.priceAlertRatio)
+        this.priceChanges.push({ groupId: row.groupId, name: row.name ?? '', from: previous, to: price, at: this.now() });
+      this.priceSeen.set(row.groupId, price);
+    }
+    if (this.priceChanges.length > 20) this.priceChanges = this.priceChanges.slice(-20);
   }
   recordRoute(candidate, model, outcome) {
     this.lastRoutes.push({ groupId: candidate.groupId, platform: candidate.platform ?? 'openai', at: this.now(), outcome, model });
@@ -162,6 +217,9 @@ export class Router {
       signal.throwIfAborted();
       this.prune();
       const catalogue = await this.account.catalogue(this.o, signal);
+      this.counters.requests++;
+      this.trackPrices(catalogue);
+      if (!this.withinBudget()) return errorResponse('Daily budget reached; raise it in the plugin settings to keep routing today', 429, 'daily_budget_exceeded');
       let candidates = catalogue.filter(c => this.eligible(c, model, platform)).sort((a, b) => this.score(a) - this.score(b) || a.groupId - b.groupId);
       // A price-first route needs a real price. When AIHub returns none for any
       // group, fall back to the nominal multiplier ranking instead of failing.
@@ -191,7 +249,7 @@ export class Router {
           if (!ids.includes(model)) continue;
         } catch {
           signal.throwIfAborted();
-          this.cooldown.set(candidate.groupId, this.now() + this.o.cooldownMs);
+          this.penalize(candidate.groupId);
           continue;
         }
         attempts++;
@@ -213,7 +271,7 @@ export class Router {
             clearTimeout(timer);
             const retry = response.status === 429 || response.status >= 500 || [401, 403].includes(response.status);
             if (retry) {
-              this.cooldown.set(candidate.groupId, this.now() + retryDelay(response.headers.get('retry-after'), this.now(), this.o.cooldownMs));
+              this.penalize(candidate.groupId, retryDelay(response.headers.get('retry-after'), this.now(), this.o.cooldownMs));
               await response.body?.cancel();
               if (session) this.sessions.delete(session);
               continue;
@@ -234,19 +292,36 @@ export class Router {
             this.sessions.set(session, { groupId: candidate.groupId, until: this.now() + this.o.sessionTtlMs });
             this.prune();
           }
-          this.cooldown.delete(candidate.groupId);
+          this.praise(candidate.groupId);
           this.recordRoute(candidate, model, 'success');
           // Once the first byte is handed to the host, no replay is ever attempted.
+          // The same pass counts tokens for the local cost estimate; it never edits bytes.
+          const decoder = new TextDecoder();
+          const usage = { input: 0, output: 0 };
+          let tail = '';
+          const observe = chunk => {
+            const piece = typeof chunk === 'string' ? chunk : decoder.decode(chunk, { stream: true });
+            const text = tail + piece;
+            for (const match of text.matchAll(/"usage"\s*:\s*\{[^{}]*\}/g)) {
+              try {
+                const u = JSON.parse(match[0].slice(match[0].indexOf('{'))).usage;
+                usage.input = Math.max(usage.input, Number(u?.input_tokens ?? u?.prompt_tokens ?? 0) || 0);
+                usage.output = Math.max(usage.output, Number(u?.output_tokens ?? u?.completion_tokens ?? 0) || 0);
+              } catch { /* a fragment split across chunks is retried with the next one */ }
+            }
+            tail = text.slice(-400);
+          };
+          observe(first.value);
           let firstPending = true;
           const stream = new ReadableStream({
             pull: async controller => {
               try {
                 if (firstPending) { firstPending = false; controller.enqueue(first.value); return; }
                 const next = await reader.read();
-                if (next.done) { reader.releaseLock(); controller.close(); }
-                else controller.enqueue(next.value);
+                if (next.done) { this.charge(candidate, usage.input + usage.output); reader.releaseLock(); controller.close(); }
+                else { observe(next.value); controller.enqueue(next.value); }
               } catch {
-                this.cooldown.set(candidate.groupId, this.now() + this.o.cooldownMs);
+                this.penalize(candidate.groupId);
                 if (session && this.sessions.get(session)?.groupId === candidate.groupId) this.sessions.delete(session);
                 await reader.cancel().catch(() => {});
                 this.recordRoute(candidate, model, 'stream_interrupted');
@@ -264,7 +339,7 @@ export class Router {
           await reader?.cancel().catch(() => {});
           this.recordRoute(candidate, model, 'connection_failed');
           if (signal.aborted) signal.throwIfAborted();
-          this.cooldown.set(candidate.groupId, this.now() + this.o.cooldownMs);
+          this.penalize(candidate.groupId);
           if (session) this.sessions.delete(session);
         } finally { clearTimeout(timer); }
       }

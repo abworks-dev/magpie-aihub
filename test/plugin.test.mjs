@@ -96,6 +96,9 @@ test('configuration refuses unknown secret fields and invalid numeric values', (
   assert.throws(() => settings({ maxMultiplier: NaN }), /Invalid/);
   assert.throws(() => settings({ maxAttempts: 2.5 }), /integer/);
   assert.throws(() => settings({ models: [{ id: 'space bad' }] }), /model id/);
+  assert.throws(() => settings({ dailyBudget: -1 }), /Invalid dailyBudget/);
+  assert.throws(() => settings({ priceAlertRatio: 0 }), /Invalid priceAlertRatio/);
+  assert.throws(() => settings({ breakerFailureRate: 2 }), /Invalid breakerFailureRate/);
   assert.equal(settings({ maxMultiplier: 0 }).maxMultiplier, 0);
   assert.throws(() => settings({ platformCaps: { unknown: 1 } }), /Unknown platform/);
   assert.throws(() => settings({ platformCaps: { deepseek: 200 } }), /platformCaps\.deepseek/);

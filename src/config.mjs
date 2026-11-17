@@ -10,6 +10,8 @@ const defaults = {
   refreshMs: 60_000, maxStaleMs: 600_000, firstByteTimeoutMs: 30_000,
   totalTimeoutMs: 90_000, cooldownMs: 30_000, sessionTtlMs: 86_400_000,
   maxSessions: 5000, maxBodyBytes: 20 * 1024 * 1024,
+  breakerWindowMs: 300_000, breakerMinSamples: 5, breakerFailureRate: 0.5,
+  dailyBudget: 0, priceAlertRatio: 0.2,
   excludedGroups: [], allowedGroups: [], requirePassed: false,
   defaultApi: 'responses', models: [], autoCreateKeys: false,
   platforms: [...PLATFORMS], monitorPort: 19871,
@@ -31,11 +33,14 @@ export function settings(raw = {}) {
     firstByteTimeoutMs: [10, 120_000], totalTimeoutMs: [10, 300_000],
     cooldownMs: [10, 3_600_000], sessionTtlMs: [1000, 604_800_000],
     maxSessions: [1, 50_000], maxBodyBytes: [1024, 50 * 1024 * 1024], monitorPort: [1024, 65535],
+    breakerWindowMs: [10_000, 3_600_000], breakerMinSamples: [1, 100], breakerFailureRate: [0, 1],
+    priceAlertRatio: [0.01, 10], dailyBudget: [0, 1_000_000],
   };
   for (const [key, [min, max]] of Object.entries(numbers)) {
     if (typeof o[key] !== 'number' || !Number.isFinite(o[key]) || o[key] < min || o[key] > max)
       throw new Error(`Invalid ${key}: expected ${min}..${max}`);
-    if (key !== 'maxMultiplier' && key !== 'minBalance' && !Number.isInteger(o[key])) throw new Error(`${key} must be an integer`);
+    if (!Number.isInteger(o[key]) && !['maxMultiplier', 'minBalance', 'dailyBudget', 'breakerFailureRate', 'priceAlertRatio'].includes(key))
+      throw new Error(`${key} must be an integer`);
   }
   if (!['economy', 'balanced', 'speed', 'price', 'value', 'reliable'].includes(o.strategy)) throw new Error('Invalid strategy');
   if (!o.platformCaps || typeof o.platformCaps !== 'object' || Array.isArray(o.platformCaps)) throw new Error('platformCaps must be an object');

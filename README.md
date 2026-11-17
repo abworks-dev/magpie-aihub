@@ -89,6 +89,9 @@ github:abworks-dev/magpie-aihub
 | `autoCreateKeys` | `false` | 允许账户模式按需创建 Key；关闭不撤销已有 Key |
 | `maxKeysPerAccount` | `8` | 插件专用 Key 总数上限（1–32）；达到后不再新建，已有 Key 继续可用 |
 | `minBalance` | `0` | 0 关闭；账户余额低于该值时暂停新建 Key，不删除已有 Key |
+| `dailyBudget` | `0` | 每日花费上限（与「真实价格」同单位），按响应 `usage` 与分组真实价格累计；0 关闭；超限的请求直接返回 429 `daily_budget_exceeded` |
+| `priceAlertRatio` | `0.2` | 分组真实价格相对上次观测变化超过该比例（0.2 = 20%）时在监控页提示；只提示，不参与路由 |
+| `breakerWindowMs` / `breakerMinSamples` / `breakerFailureRate` | `300000` / `5` / `0.5` | 滑动窗口熔断：窗口内失败数达到样本下限且失败率超阈值才冷却该分组，避免一次抖动把好分组踢掉 |
 | `defaultApi` | `responses` | 默认协议；可设 `chat`，Gemini 自动发现仍使用 Responses；原生 Gemini 须显式配置 |
 | `models` | `[]` | 字符串 ID 或 `{id, platform?, api?, context?, output?}`；空列表自动发现 |
 | `monitorPort` | `19871` | 页面服务与监控的回环端口；默认候选，**尚未在生产分配或确认可用** |
@@ -102,9 +105,9 @@ github:abworks-dev/magpie-aihub
 
 设置和监控是**同一个页面**：Magpie 里打开的是静态设置页，它经 `bridge.service` 或监控标签跳到插件自己的回环服务（`127.0.0.1:<monitorPort>`），那里同时提供设置和只读监控。`magpie web` 会把该服务代理到插件页面路径下，所以从别的电脑经 Magpie 访问时不需要另开端口；桌面版 Magpie 不代理服务，页面会提示在本机打开 `http://127.0.0.1:19871/`。`monitorPort: 19871` 只是默认候选，须先核对目标主机端口和宿主服务桥接。
 
-服务只监听回环，仅接受 GET/HEAD，并要求精确 `Host`、`Origin` 缺省或为 `null`、无请求体；快照还需要服务注入到页面里的进程级令牌（`x-aihub-service-token`），因此别的站点或被沙箱化的第三方页面无法读取。Cloud 当前仅批准四个静态资源，未批准 service 新路由，不能据此声称生产监控已接通。如果 `magpie web` 前面还有反向代理或入口（Caddy/Nginx/Cloudflare 等），它必须原样转发 `/_magpie/plugin/<32 位 token>/_magpie/service/` 及其下的 `snapshot`、`identity`，并且**不能剥离路径前缀**；只放行 `index.html`、`app.js`、`style.css`、`_magpie/bridge.js` 时，点「监控」会落到代理自己的 404 页（如 Caddy 的 `Not exposed by this Magpie entry.`），这不是插件渲染错误。
+服务只监听回环，仅接受 GET/HEAD，并要求精确 `Host`、`Origin` 缺省或为 `null`、无请求体；快照还需要服务注入到页面里的进程级令牌（`x-aihub-service-token`），因此别的站点或被沙箱化的第三方页面无法读取。Cloud 当前仅批准四个静态资源，未批准 service 新路由，不能据此声称生产监控已接通。如果 `magpie web` 前面还有反向代理或入口（Caddy/Nginx/Cloudflare 等），它必须原样转发 `/_magpie/plugin/<32 位 token>/_magpie/service/` 及其下的 `snapshot`、`identity`、`metrics`，并且**不能剥离路径前缀**；只放行 `index.html`、`app.js`、`style.css`、`_magpie/bridge.js` 时，点「监控」会落到代理自己的 404 页（如 Caddy 的 `Not exposed by this Magpie entry.`），这不是插件渲染错误。
 
-快照顶部为账户卡：余额、冻结金额、今日/本月消耗（按平台配额汇总）、累计请求、专用 Key 数量与上限、各平台日/月用量与限额，以及最近建 Key/阻止事件。余额数据以 60 秒间隔读取 `/api/v1/auth/me`、`/api/v1/usage/stats`、`/api/v1/user/platform-quotas`；读取失败时沿用上次快照（最多 10 分钟），并显示 `billing_unavailable`、`billing_access_denied` 或 `billing_sign_in_required` / `billing_session_expired`，不推断数值。接口正常但响应里没有余额字段时（组织或配额账号常见），余额仍显示 `—`，但卡片会标注“该账户未返回余额字段”，与读取失败区分开。分组表的“真实价格”由 AIHub 区间窗口的 `range_cache` 折算：窗口内 `input/cache_read/cache_creation` 的成本之和除以 Token 之和，再乘 1e6，得到每百万 Token 的美元价；窗口未就绪、已过期或 Token 为 0 时不显示，也不推断。`/api/v1/keys` 会返回明文 Key；插件只在恢复本实例创建的专用 Key 时读取该列表（按实例命名精确匹配），不做批量导出、不记录明文。账户卡标题显示脱敏标识（如 `ab***@example.test`），点标题旁的眼睛按钮时才向 `GET /identity` 取一次完整账号（同一页面令牌、只读、不写回快照），再点收起；快照本身始终不含完整标识。
+快照顶部为账户卡：余额、冻结金额、今日/本月消耗（按平台配额汇总）、累计请求、专用 Key 数量与上限、各平台日/月用量与限额，以及最近建 Key/阻止事件。余额数据以 60 秒间隔读取 `/api/v1/auth/me`、`/api/v1/usage/stats`、`/api/v1/user/platform-quotas`；读取失败时沿用上次快照（最多 10 分钟），并显示 `billing_unavailable`、`billing_access_denied` 或 `billing_sign_in_required` / `billing_session_expired`，不推断数值。接口正常但响应里没有余额字段时（组织或配额账号常见），余额仍显示 `—`，但卡片会标注“该账户未返回余额字段”，与读取失败区分开。分组表的“真实价格”由 AIHub 区间窗口的 `range_cache` 折算：窗口内 `input/cache_read/cache_creation` 的成本之和除以 Token 之和，再乘 1e6，得到每百万 Token 的美元价；窗口未就绪、已过期或 Token 为 0 时不显示，也不推断。`/api/v1/keys` 会返回明文 Key；插件只在恢复本实例创建的专用 Key 时读取该列表（按实例命名精确匹配），不做批量导出、不记录明文。账户卡标题显示脱敏标识（如 `ab***@example.test`），点标题旁的眼睛按钮时才向 `GET /identity` 取一次完整账号（同一页面令牌、只读、不写回快照），再点收起；快照本身始终不含完整标识。账户卡还带 Key 池清单（每把 Key 的来源与最近使用时间，从未使用的会标出），顶部有「今日花费 / 预算」与价格波动提示，分组表增加「平均」「使用」两列。`GET /metrics` 以 Prometheus 文本输出账户数、请求数、失败数、今日花费，与快照同样只在本机回环可达。
 
 快照展示分组可用性/筛选原因、倍率、可得的成功率/TPS/缓存命中率/价格、目录新鲜度、Key 数量及最近 100 条内存路由结果。缺失、未就绪或不可信的指标为 `null`。快照不返回原始认证包、Key、Cookie、请求/响应 body 或会话 ID。监控读取可按需发起远端目录 GET，并可能触发管理令牌刷新与保存；**不会推理探测或创建 Key**（但若自动发现与 `autoCreateKeys` 同时开启，业务请求仍可能触发建 Key）。
 

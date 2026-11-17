@@ -64,6 +64,16 @@
                   <small id="platform-caps-help">每行 <code>平台=上限</code>；没写的平台用上面的统一上限。</small>
                 </label>
                 <label class="field">
+                  <span class="field-label">日预算（美元）</span>
+                  <input id="dailyBudget" name="dailyBudget" type="number" min="0" max="1000000" step="any" value="0" aria-describedby="budget-help">
+                  <small id="budget-help">按响应 usage 与分组真实价格累计；0 表示不限。超预算时请求直接返回 429。</small>
+                </label>
+                <label class="field">
+                  <span class="field-label">价格波动阈值</span>
+                  <input id="priceAlertRatio" name="priceAlertRatio" type="number" min="0.01" max="10" step="any" value="0.2" aria-describedby="price-alert-help">
+                  <small id="price-alert-help">真实价格相对上次变化超过该比例（0.2 = 20%）时，在监控页提示。</small>
+                </label>
+                <label class="field">
                   <span class="field-label">最多尝试次数</span>
                   <input id="maxAttempts" name="maxAttempts" type="number" min="1" max="5" step="1" value="3" required>
                   <small>含首次请求，1–5 次。</small>

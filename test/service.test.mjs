@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { startService, serviceHandler, snapshotView } from '../src/service.mjs';
+import { metricsText, startService, serviceHandler, snapshotView } from '../src/service.mjs';
 
 function call(handler, { method = 'GET', path = '/', headers = {}, body = '' } = {}) {
   return new Promise((resolve, reject) => {
@@ -231,4 +231,13 @@ test('the handler requires a snapshot supplier, a usable port and a well-formed 
   assert.throws(() => serviceHandler({ port: 70000, getSnapshot: async () => snapshot() }), /port/);
   assert.throws(() => serviceHandler({ port: 0, token: 'bad token!', getSnapshot: async () => snapshot() }), /token/);
   assert.throws(() => snapshotView({ schemaVersion: 2, accounts: [] }), /INVALID_SNAPSHOT/);
+});
+
+test('the metrics text exposes only process counters', () => {
+  const body = metricsText({ accounts: 2, requests: 5, failures: 1, spendUsd: 0.5 });
+  assert.match(body, /aihub_accounts 2/);
+  assert.match(body, /aihub_requests_total 5/);
+  assert.match(body, /aihub_failures_total 1/);
+  assert.match(body, /aihub_spend_usd 0\.500000/);
+  assert.doesNotMatch(body, /@|groups|keys/i);
 });

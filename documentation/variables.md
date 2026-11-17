@@ -20,6 +20,9 @@
 | autoCreateKeys | false；boolean | UI + Account | 主动开启才可 POST 创建；关闭不撤销已有 Key |
 | maxKeysPerAccount | 8；整数 1–32 | UI + Account | 插件专用 Key 总数上限；达到后 `key_cap_reached`，不删除已有 Key |
 | minBalance | 0；0–100000 有限数 | UI + Account | >0 时余额低于阈值暂停新建 Key（`balance_too_low`）；读取失败不推断余额、不阻塞已有 Key |
+| dailyBudget | 0；0–1000000 有限数 | UI + Router | 每日花费上限，按响应 usage 与分组真实价格累计；0 关闭；超限返回 429 `daily_budget_exceeded` |
+| priceAlertRatio | 0.2；0.01–10 有限数 | UI + Router | 真实价格相对上次观测的变化比例阈值，超出则记入监控「价格波动」；只提示，不参与路由 |
+| breakerWindowMs / breakerMinSamples / breakerFailureRate | 300000 / 5 / 0.5 | Router | 滑动窗口熔断参数：窗口内失败数 ≥ 样本下限且失败率 > 阈值才冷却分组 |
 | defaultApi | responses；responses / chat | UI + 入口 | 宿主默认适配协议，不转换请求语义；Gemini 不支持 chat，原生须逐模型选择 |
 | models | []；最多 200 项且公共 ID 唯一 | UI + 入口 | 字符串或 {id,platform?,api?,context?,output?}；原始 ID 1–160 个允许字符；非 OpenAI namespace 或显式 platform，二者须一致；api 为 responses / chat / gemini，Gemini 仅 responses / gemini，其余 responses / chat；context / output 正安全整数。显式配置优先，空列表发现，不证明推理可用 |
 | monitorPort | 19871；整数 1024–65535 | UI + 入口 / page.service | 页面服务与只读监控的回环端口；仅默认候选，尚未生产分配或确认可用；需核对宿主端口与服务桥接 |

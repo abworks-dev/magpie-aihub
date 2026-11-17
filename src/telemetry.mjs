@@ -55,6 +55,15 @@ export async function monitorSnapshot(runtimes, options, now = Date.now) {
       sourceUpdatedAt: finite(account.snapshot?.at), stale: Boolean(errorCode) || account.remoteStale === true,
       ...(errorCode ? { errorCode } : {}), groups,
       routes: (router.lastRoutes ?? []).slice(-100).map(r => ({ platform: text(r.platform), model: text(r.model), groupId: r.groupId, at: finite(r.at), outcome: text(r.outcome) })),
+      spend: { day: text(router.spend?.day), usd: finite(router.spend?.usd), tokens: finite(router.spend?.tokens) },
+      budget: finite(options.dailyBudget),
+      priceChanges: (router.priceChanges ?? []).slice(-5).map(change => ({
+        groupId: change.groupId, name: text(change.name), from: finite(change.from), to: finite(change.to), at: finite(change.at),
+      })),
+      keys: account.data.keys.slice(0, 32).map(key => ({
+        groupId: key.groupId, platform: text(key.platform ?? 'openai'), owned: key.owned === true,
+        lastUsedAt: finite([...router.lastRoutes].reverse().find(route => route.groupId === key.groupId)?.at),
+      })),
       keyState: { ready: account.data.keys.length, pending: account.data.pending ? 1 : 0, autoCreateKeys: options.autoCreateKeys, maxKeysPerAccount: options.maxKeysPerAccount, minBalance: options.minBalance },
       billing: billing ? {
         at: finite(billing.at), balance: finite(billing.balance), balanceKnown: billing.balanceKnown === true,

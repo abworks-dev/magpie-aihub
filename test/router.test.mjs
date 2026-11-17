@@ -341,3 +341,54 @@ test('model discovery reads existing keys without preparing or creating keys', a
   assert.deepEqual(prepared, []);
   assert.deepEqual(calls, []);
 });
+
+test('the breaker cools a group only after a sustained failure window', () => {
+  const { router } = fixture([candidate(1)], { breakerMinSamples: 3, breakerFailureRate: 0.5 });
+  router.penalize(1);
+  router.penalize(1);
+  assert.equal(router.cooldown.has(1), false, 'two failures stay below the sample floor');
+  router.penalize(1);
+  assert.equal(router.cooldown.has(1), true, 'the third failure trips the breaker');
+});
+
+test('a success inside the window keeps a single jitter from tripping the breaker', () => {
+  const { router } = fixture([candidate(1)], { breakerMinSamples: 2, breakerFailureRate: 0.5 });
+  router.penalize(1);
+  router.praise(1);
+  router.penalize(1);
+  router.praise(1);
+  assert.equal(router.window(1).fails.length, 2);
+  assert.equal(router.cooldown.has(1), false, 'two failures out of four samples sit on the threshold, not over it');
+});
+
+test('the daily budget stops routing with 429 and resets on the next day', async () => {
+  let now = Date.parse('2026-05-01T10:00:00Z');
+  const { router, calls } = fixture([candidate(1)], { dailyBudget: 1 }, { now: () => now, respond: async () => new Response('ok') });
+  await consume(router, request());
+  assert.equal(calls.length, 1);
+  router.charge({ groupId: 1, metrics: { realPrice: 10 } }, 1_000_000);
+  const blocked = await consume(router, request());
+  assert.equal(blocked.response.status, 429);
+  assert.match(blocked.text, /daily_budget_exceeded/);
+  assert.equal(calls.length, 1, 'no upstream call after the budget is spent');
+  now += 24 * 60 * 60 * 1000;
+  const next = await consume(router, request());
+  assert.equal(next.response.status, 200, 'the next day starts with a fresh budget');
+});
+
+test('token usage is charged at the group real price', () => {
+  const { router } = fixture([candidate(1)]);
+  router.charge({ groupId: 1, metrics: { realPrice: 2 } }, 500_000);
+  assert.equal(Number(router.spend.usd.toFixed(6)), 1);
+  assert.equal(router.spend.tokens, 500000);
+});
+
+test('a real price move beyond the alert ratio is recorded for the monitor', () => {
+  const { router } = fixture([candidate(1)], { priceAlertRatio: 0.2 });
+  router.trackPrices([candidate(1, { metrics: { realPrice: 1 } })]);
+  assert.equal(router.priceChanges.length, 0, 'the first observation is only a baseline');
+  router.trackPrices([candidate(1, { metrics: { realPrice: 1.5 } })]);
+  assert.equal(router.priceChanges.length, 1);
+  assert.equal(router.priceChanges[0].from, 1);
+  assert.equal(router.priceChanges[0].to, 1.5);
+});

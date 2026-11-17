@@ -14,6 +14,7 @@
   };
   const defaults = {
     strategy: 'balanced', maxMultiplier: 0.16, platformCaps: {}, maxAttempts: 3, poolSize: 4,
+    dailyBudget: 0, priceAlertRatio: 0.2,
     excludedGroups: [], allowedGroups: [], requirePassed: false,
     minBalance: 0, maxKeysPerAccount: 8,
     autoCreateKeys: false, defaultApi: 'responses', models: [], monitorPort: 19871,
@@ -106,6 +107,8 @@
     if (validInteger(raw.maxAttempts, 1, 5)) result.maxAttempts = raw.maxAttempts;
     if (validInteger(raw.poolSize, 1, 8)) result.poolSize = raw.poolSize;
     if (typeof raw.minBalance === 'number' && Number.isFinite(raw.minBalance) && raw.minBalance >= 0 && raw.minBalance <= 100000) result.minBalance = raw.minBalance;
+    if (typeof raw.dailyBudget === 'number' && Number.isFinite(raw.dailyBudget) && raw.dailyBudget >= 0 && raw.dailyBudget <= 1000000) result.dailyBudget = raw.dailyBudget;
+    if (typeof raw.priceAlertRatio === 'number' && Number.isFinite(raw.priceAlertRatio) && raw.priceAlertRatio >= 0.01 && raw.priceAlertRatio <= 10) result.priceAlertRatio = raw.priceAlertRatio;
     if (validInteger(raw.maxKeysPerAccount, 1, 32)) result.maxKeysPerAccount = raw.maxKeysPerAccount;
     for (const key of ['excludedGroups', 'allowedGroups']) if (groupList(raw[key])) result[key] = [...new Set(raw[key])];
     for (const key of ['requirePassed', 'autoCreateKeys']) if (typeof raw[key] === 'boolean') result[key] = raw[key];
@@ -119,7 +122,7 @@
 
   function populate(raw) {
     const options = safeOptions(raw);
-    for (const key of ['strategy', 'maxMultiplier', 'maxAttempts', 'poolSize', 'defaultApi', 'monitorPort', 'minBalance', 'maxKeysPerAccount']) $(key).value = String(options[key]);
+    for (const key of ['strategy', 'maxMultiplier', 'maxAttempts', 'poolSize', 'defaultApi', 'monitorPort', 'minBalance', 'maxKeysPerAccount', 'dailyBudget', 'priceAlertRatio']) $(key).value = String(options[key]);
     $('platformCaps').value = capsToText(options.platformCaps);
     for (const platform of platforms) $(`platform-${platform}`).checked = options.platforms.includes(platform);
     for (const key of ['excludedGroups', 'allowedGroups']) $(key).value = options[key].join(', ');
@@ -191,6 +194,8 @@
       monitorPort: readNumber('monitorPort', '回环端口', 1024, 65535),
       strategy: $('strategy').value,
       maxMultiplier: readNumber('maxMultiplier', '最高倍率', 0, 100, false),
+      dailyBudget: readNumber('dailyBudget', '日预算（美元）', 0, 1000000, false),
+      priceAlertRatio: readNumber('priceAlertRatio', '价格波动阈值', 0.01, 10, false),
       platformCaps: (() => { try { return textToCaps($('platformCaps').value); } catch (error) { return invalid('platformCaps', error.message); } })(),
       maxAttempts: readNumber('maxAttempts', '最多尝试次数', 1, 5),
       poolSize: readNumber('poolSize', '候选池大小', 1, 8),
@@ -416,6 +421,15 @@
         const label = actionLabel[e.action] ?? e.action;
         return clock(e.at) + ' ' + escapeHtml(label) + (e.action === 'blocked' && e.code ? '（' + escapeHtml(e.code) + '）' : '');
       }).join(' · ') + '</p>' : '';
+      // Key inventory: what exists, which connection created it, and whether it ever carried a request.
+      const keyRows = Array.isArray(account.keys) ? account.keys : [];
+      const neverUsed = keyRows.filter(key => key.owned === true && !key.lastUsedAt).length;
+      const keyPool = keyRows.length ? '<details class="account-keys"><summary>Key 池 ' + keyRows.length + ' 把'
+        + (neverUsed ? ' · 未使用 ' + neverUsed + ' 把（可撤销）' : '') + '</summary><ul>'
+        + keyRows.slice(0, 12).map(key => '<li><span>' + escapeHtml(platformLabel[key.platform] ?? key.platform ?? '—')
+          + ' · #' + escapeHtml(String(key.groupId ?? '—')) + '</span><span class="cell-sub">'
+          + (key.owned ? '插件创建' : '手工') + ' · ' + (key.lastUsedAt ? '用于 ' + clock(key.lastUsedAt) : '从未使用')
+          + '</span></li>').join('') + '</ul></details>' : '';
       return '<article class="account-card">' + head
         + '<div class="account-balance"><span class="account-figure"' + (billing.balanceKnown === false ? ' title="该账户未返回余额字段（可能是组织或配额账号）"' : '') + '>' + money(billing.balance) + '</span>'
         + '<span class="account-sub">可用余额 · 冻结 ' + money(billing.frozen) + '</span>'
@@ -426,7 +440,7 @@
         + '<div><dt>本月消耗</dt><dd>' + money(total('monthlyUsage')) + '</dd></div>'
         + '<div><dt>累计请求</dt><dd>' + (usage && num(usage.requests) !== null ? num(usage.requests).toLocaleString('zh-CN') : '—') + '</dd></div>'
         + '<div><dt>专用 Key</dt><dd>' + (keys.ready ?? 0) + (keys.maxKeysPerAccount ? ' / ' + keys.maxKeysPerAccount : '') + '</dd></div>'
-        + '</dl>' + platformList + eventLine + '</article>';
+        + '</dl>' + platformList + eventLine + keyPool + '</article>';
     }).join('');
   }
 
@@ -464,7 +478,11 @@
     for (const row of rows) if (row.eligible !== true) for (const reason of row.reasons ?? []) skipped.set(reason, (skipped.get(reason) ?? 0) + 1);
     const skippedTop = [...skipped].sort((a, b) => b[1] - a[1]);
     const skippedHint = skippedTop.length ? `主因：${skippedTop.slice(0, 2).map(([reason, count]) => `${reason} ×${count}`).join('、')}` : '没有分组被排除';
+    const spendUsd = accountsList.reduce((sum, account) => sum + (num(account.spend?.usd) ?? 0), 0);
+    const budget = accountsList.map(account => num(account.budget)).find(value => value !== null && value > 0) ?? 0;
+    const changes = accountsList.flatMap(account => (account.priceChanges ?? []).map(change => ({ ...change, account: account.label }))).slice(-5);
     $('monitor-summary').innerHTML = [
+      ['今日花费', money(spendUsd), budget > 0 ? `预算 ${money(budget)}` : '未设预算（插件设置）', '按响应里的 usage 与分组真实价格估算，单位与真实价格列一致'],
       ['账户', accountsList.length, errorCode ? `目录：${escapeHtml(catalogueLabels[errorCode] ?? errorCode)}` : stale ? '目录较旧' : '目录已刷新'],
       ['分组', rows.length, '来自当前目录'],
       ['可用分组', eligible, `${rows.length - eligible} 个被排除 · ${escapeHtml(skippedHint)}`, skippedTop.map(([reason, count]) => `${reason} ×${count}`).join('\n')],
@@ -474,7 +492,9 @@
         <span class="kpi-label">${label}</span>
         <span class="kpi-value">${value}</span>
         <span class="kpi-hint">${hint}</span>
-      </div>`).join('');
+      </div>`).join('') + (changes.length ? '<div class="kpi"><span class="kpi-label">价格波动</span><span class="kpi-hint">'
+        + changes.map(change => `${escapeHtml(change.name || '#' + String(change.groupId ?? ''))} ${decimal(change.from, 4)}→${decimal(change.to, 4)}`).join(' · ')
+        + '</span></div>' : '');
 
     const counts = new Map();
     for (const row of rows) counts.set(row.platform, (counts.get(row.platform) ?? 0) + 1);
@@ -500,11 +520,13 @@
         <td><span class="cell-name">${escapeHtml(row.name || `分组 ${row.groupId ?? ''}`)}</span><span class="cell-sub">#${escapeHtml(row.groupId ?? '—')} · ${escapeHtml(row.account)}</span></td>
         <td>${escapeHtml(platformLabel[row.platform] ?? row.platform ?? '—')}</td>
         <td class="num">${row.multiplier === null || row.multiplier === undefined ? '—' : `×${decimal(row.multiplier, 3)}`}</td>
+        <td class="num">${num(row.latency) === null ? '—' : (num(row.latency) / 1000).toFixed(1) + 's'}</td>
         <td class="num">${percent(row.metrics?.successRate)}</td>
         <td class="num">${percent(row.metrics?.cacheHitRate)}</td>
         <td class="num">${decimal(row.metrics?.tps, 1)}</td>
         <td class="num">${decimal(row.metrics?.realPrice, 4)}</td>
-        <td class="num">${Array.isArray(row.models) ? row.models.length : 0}</td>
+        <td class="num" title="${escapeHtml((Array.isArray(row.models) ? row.models : []).slice(0, 20).join('\n'))}">${Array.isArray(row.models) ? row.models.length : 0}</td>
+        <td class="num" title="${row.hasKey ? '本连接已为该分组建了 Key' : '本连接尚未为该分组建 Key'}">${row.selectedCount ?? 0}</td>
         <td>${stateText}</td>
         <td class="num">${clock(row.lastUsedAt)}</td>
       </tr>`;
@@ -514,7 +536,7 @@
     $('monitor-body').innerHTML = `
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>分组</th><th>平台</th><th class="num">倍率</th><th class="num">成功率</th><th class="num">缓存命中</th><th class="num">TPS</th><th class="num" title="按区间窗口的实际成本与 Token 折算为每百万 Token 美元">真实价格</th><th class="num">模型</th><th>状态</th><th class="num">最后使用</th></tr></thead>
+          <thead><tr><th>分组</th><th>平台</th><th class="num">倍率</th><th class="num" title="大厅样本的平均延迟">平均</th><th class="num">成功率</th><th class="num">缓存命中</th><th class="num">TPS</th><th class="num" title="按区间窗口的实际成本与 Token 折算为每百万 Token 美元">真实价格</th><th class="num">模型</th><th class="num" title="当前会话里共享该分组的路由数">使用</th><th>状态</th><th class="num">最后使用</th></tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
       </div>

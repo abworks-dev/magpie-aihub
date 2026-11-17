@@ -20,6 +20,16 @@ async function AIHubPlugin({ client }, initialOptions = {}) {
       port: options.monitorPort,
       getSnapshot: () => monitorSnapshot(runtimes, options),
       getIdentities: () => [...runtimes.values()].slice(0, 32).map(item => item.account?.data?.identity ?? ''),
+      getMetrics: () => {
+        const items = [...runtimes.values()];
+        const total = pick => items.reduce((sum, item) => sum + (Number(pick(item)) || 0), 0);
+        return {
+          accounts: items.length,
+          requests: total(item => item.router?.counters?.requests),
+          failures: total(item => item.router?.counters?.failures),
+          spendUsd: total(item => item.router?.spend?.usd),
+        };
+      },
     });
   } catch (error) {
     console.error(`[aihub-auto] page service on 127.0.0.1:${options.monitorPort} did not start: ${error?.message ?? error ?? 'unknown error'}`);
