@@ -87,7 +87,7 @@ export class Account {
       }),
     ]);
     if (!rates || typeof rates !== 'object' || Array.isArray(rates)) throw new Error('Unsupported AIHub account rates schema');
-    const probe = list(groups).find(row => row?.range_cache?.ready === true);
+    const probe = list(publicRows).find(row => row?.range_cache?.ready === true);
     if (probe && !this.rangeFieldsLogged) {
       this.rangeFieldsLogged = true;
       // Field names only: tells us where AIHub keeps the real price without
