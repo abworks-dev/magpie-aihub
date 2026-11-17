@@ -553,7 +553,7 @@ export class Router {
       const advertised = candidate.advertisedModels?.length ? candidate.advertisedModels : candidate.models;
       if (advertised !== undefined) {
         evidence = true;
-        for (const id of advertised) if (this.eligible(candidate, id)) ids.add(publicModelId(candidate.platform ?? 'openai', id));
+        for (const id of advertised) if (this.eligible(candidate, id, candidate.platform ?? 'openai', { requirePrice: false })) ids.add(publicModelId(candidate.platform ?? 'openai', id));
       }
     }
     // Only dedicated keys already stored for still-permitted catalogue groups
@@ -564,7 +564,7 @@ export class Router {
       try {
         const models = await this.account.modelIds(key, this.o, signal);
         evidence = true;
-        for (const id of models) if (this.eligible(candidate, id)) ids.add(publicModelId(candidate.platform ?? 'openai', id));
+        for (const id of models) if (this.eligible(candidate, id, candidate.platform ?? 'openai', { requirePrice: false })) ids.add(publicModelId(candidate.platform ?? 'openai', id));
       } catch {
         signal?.throwIfAborted();
         // Valid catalogue advertisements remain useful if a dedicated key expired.

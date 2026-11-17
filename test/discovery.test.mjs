@@ -56,6 +56,11 @@ test('fresh managed account with zero keys discovers sorted hall IDs using only 
   assert.equal(settings().defaultApi, 'responses');
 });
 
+test('a price-first strategy does not hide models that have no observed price yet', async () => {
+  const { router } = fixture({ providers: [hall(1, ['model-a', 'model-b'])], options: { strategy: 'price' } });
+  assert.deepEqual(await router.discover(), ['model-a', 'model-b']);
+});
+
 test('managed discovery honors account visibility, all group policy filters and rejected model health', async () => {
   const groups = Array.from({ length: 12 }, (_, i) => group(i + 1));
   groups[4].platform = 'anthropic';
