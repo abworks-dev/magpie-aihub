@@ -127,6 +127,43 @@ export class Account {
     return removed;
   }
   /** Delete one key this plugin created; the caller decides which ones qualify. */
+  /**
+   * Policy-driven cleanup: give the least recently used keys back only when the
+   * account is out of slots and a model needs a group none of them serves.
+   * Keys of groups still in `keep` are untouched, keys without a usable age are
+   * left alone, and the caller decides whether this is a dry run.
+   */
+  async evictIdle({ keep = new Set(), days = 7, apply = false } = {}, signal) {
+    const empty = { apply, candidates: [], deleted: [], failed: [] };
+    if (this.data.mode !== 'managed') return empty;
+    const rows = await this.ownRemoteKeys(signal);
+    const prefix = `magpie-aihub-${this.data.instanceId.slice(0, 12)}-`;
+    const cutoff = this.now() - days * 24 * 60 * 60 * 1000;
+    const candidates = [];
+    for (const row of rows) {
+      const name = String(row?.name ?? '');
+      if (!name.startsWith(prefix)) continue;
+      const groupId = Number(row?.group_id ?? /-g(\d+)$/.exec(name)?.[1]);
+      if (!Number.isSafeInteger(groupId) || keep.has(groupId)) continue;
+      const created = Date.parse(row?.created_at ?? row?.createdAt ?? '');
+      const used = Date.parse(row?.last_used_at ?? row?.lastUsedAt ?? '');
+      const at = Math.max(Number.isFinite(used) ? used : 0, Number.isFinite(created) ? created : 0);
+      if (!at || at > cutoff) continue;
+      candidates.push({ id: Number(row.id), groupId, name, at });
+    }
+    if (!apply) return { ...empty, candidates };
+    const deleted = [], failed = [];
+    for (const candidate of candidates) {
+      try {
+        await this.deleteRemoteKey(candidate.id, signal);
+        deleted.push(candidate);
+        this.data.keys = this.data.keys.filter(key => key.remoteId !== candidate.id);
+        this.note('evicted', candidate.groupId, 'evicted');
+      } catch (error) { failed.push({ ...candidate, message: String(error?.message ?? error) }); }
+    }
+    if (deleted.length) await this.save();
+    return { apply, candidates, deleted, failed };
+  }
   async deleteRemoteKey(id, signal) {
     return api(`/api/v1/keys/${encodeURIComponent(String(id))}`, { method: 'DELETE', token: this.data.access, fetcher: this.fetcher, signal });
   }

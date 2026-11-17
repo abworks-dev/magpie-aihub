@@ -345,6 +345,30 @@ test('ordinary 400 and 404 inference errors are returned without trying another 
   }
 });
 
+test('a full account pool asks the eviction policy once before giving up on the model', async () => {
+  const { router, account } = fixture(undefined, { maxKeysPerAccount: 1, evictIdleKeys: true, evictIdleDays: 3 });
+  account.data = { mode: 'managed', instanceId: 'test-instance', keys: [{ groupId: 77, key: 'old' }] };
+  const seen = [];
+  account.evictIdle = async ({ keep, days, apply }) => {
+    seen.push({ keep: [...keep].sort(), days, apply });
+    account.data.keys = [];
+    return { deleted: [{ groupId: 77, name: 'magpie-aihub-test-instanc-g77' }] };
+  };
+  const { response } = await consume(router, request());
+  assert.equal(response.status, 200);
+  assert.deepEqual(seen, [{ keep: [1, 2], days: 3, apply: true }]);
+  assert.deepEqual(router.evictions.map(gone => gone.groupId), [77]);
+});
+
+test('the eviction policy stays off unless it is switched on', async () => {
+  const { router, account } = fixture(undefined, { maxKeysPerAccount: 1 });
+  account.data = { mode: 'managed', instanceId: 'test-instance', keys: [{ groupId: 77, key: 'old' }] };
+  let asked = 0;
+  account.evictIdle = async () => { asked += 1; return { deleted: [] }; };
+  await consume(router, request());
+  assert.equal(asked, 0);
+});
+
 test('a group that says the model is unavailable for it hands over to the next group', async () => {
   const body = JSON.stringify({ error: { code: 404, message: `Model "${model}" is not available for this group`, status: 'NOT_FOUND' } });
   const { router, calls } = fixture(undefined, {}, { respond: async (url, init) => groupOf(init) === 1 ? new Response(body, { status: 404 }) : new Response('ok') });

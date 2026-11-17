@@ -99,6 +99,9 @@ test('configuration refuses unknown secret fields and invalid numeric values', (
   assert.throws(() => settings({ dailyBudget: -1 }), /Invalid dailyBudget/);
   assert.throws(() => settings({ priceAlertRatio: 0 }), /Invalid priceAlertRatio/);
   assert.throws(() => settings({ breakerFailureRate: 2 }), /Invalid breakerFailureRate/);
+  assert.throws(() => settings({ evictIdleDays: 0 }), /Invalid evictIdleDays/);
+  assert.throws(() => settings({ evictIdleKeys: 'yes' }), /Boolean option expected/);
+  assert.equal(settings({ evictIdleKeys: true, evictIdleDays: 30 }).evictIdleDays, 30);
   assert.equal(settings({ maxMultiplier: 0 }).maxMultiplier, 0);
   assert.throws(() => settings({ platformCaps: { unknown: 1 } }), /Unknown platform/);
   assert.throws(() => settings({ platformCaps: { deepseek: 200 } }), /platformCaps\.deepseek/);

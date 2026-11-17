@@ -16,7 +16,7 @@
     strategy: 'balanced', maxMultiplier: 0.16, platformCaps: {}, maxAttempts: 3, poolSize: 4,
     dailyBudget: 0, priceAlertRatio: 0.2,
     excludedGroups: [], allowedGroups: [], requirePassed: false,
-    minBalance: 0, maxKeysPerAccount: 8, keysPerPlatform: 0,
+    minBalance: 0, maxKeysPerAccount: 8, keysPerPlatform: 0, evictIdleKeys: false, evictIdleDays: 7,
     autoCreateKeys: false, bareModelIds: false, defaultApi: 'responses', models: [], monitorPort: 19871,
     platforms: [...platforms],
   };
@@ -111,8 +111,9 @@
     if (typeof raw.priceAlertRatio === 'number' && Number.isFinite(raw.priceAlertRatio) && raw.priceAlertRatio >= 0.01 && raw.priceAlertRatio <= 10) result.priceAlertRatio = raw.priceAlertRatio;
     if (validInteger(raw.maxKeysPerAccount, 1, 32)) result.maxKeysPerAccount = raw.maxKeysPerAccount;
     if (validInteger(raw.keysPerPlatform, 0, 32)) result.keysPerPlatform = raw.keysPerPlatform;
+    if (validInteger(raw.evictIdleDays, 1, 90)) result.evictIdleDays = raw.evictIdleDays;
     for (const key of ['excludedGroups', 'allowedGroups']) if (groupList(raw[key])) result[key] = [...new Set(raw[key])];
-    for (const key of ['requirePassed', 'autoCreateKeys', 'bareModelIds']) if (typeof raw[key] === 'boolean') result[key] = raw[key];
+    for (const key of ['requirePassed', 'autoCreateKeys', 'bareModelIds', 'evictIdleKeys']) if (typeof raw[key] === 'boolean') result[key] = raw[key];
     if (['responses', 'chat'].includes(raw.defaultApi)) result.defaultApi = raw.defaultApi;
     for (const [key, [min, max]] of Object.entries(advancedRanges)) if (validInteger(raw[key], min, max)) result[key] = raw[key];
     if (Array.isArray(raw.platforms) && raw.platforms.length && raw.platforms.every(id => platforms.includes(id))) result.platforms = [...new Set(raw.platforms)];
@@ -123,11 +124,11 @@
 
   function populate(raw) {
     const options = safeOptions(raw);
-    for (const key of ['strategy', 'maxMultiplier', 'maxAttempts', 'poolSize', 'defaultApi', 'monitorPort', 'minBalance', 'maxKeysPerAccount', 'keysPerPlatform', 'dailyBudget', 'priceAlertRatio']) $(key).value = String(options[key]);
+    for (const key of ['strategy', 'maxMultiplier', 'maxAttempts', 'poolSize', 'defaultApi', 'monitorPort', 'minBalance', 'maxKeysPerAccount', 'keysPerPlatform', 'evictIdleDays', 'dailyBudget', 'priceAlertRatio']) $(key).value = String(options[key]);
     $('platformCaps').value = capsToText(options.platformCaps);
     for (const platform of platforms) $(`platform-${platform}`).checked = options.platforms.includes(platform);
     for (const key of ['excludedGroups', 'allowedGroups']) $(key).value = options[key].join(', ');
-    for (const key of ['requirePassed', 'autoCreateKeys', 'bareModelIds']) $(key).checked = options[key];
+    for (const key of ['requirePassed', 'autoCreateKeys', 'bareModelIds', 'evictIdleKeys']) $(key).checked = options[key];
     $('models').value = options.models.map(model => {
       const { id } = modelIdentity(model);
       return model.api ? `${id}|${model.api}` : id;
@@ -203,6 +204,8 @@
       minBalance: readNumber('minBalance', '余额阈值', 0, 100000, false),
       maxKeysPerAccount: readNumber('maxKeysPerAccount', '每账户 Key 上限', 1, 32),
       keysPerPlatform: readNumber('keysPerPlatform', '每平台 Key 配额', 0, 32),
+      evictIdleKeys: $('evictIdleKeys').checked,
+      evictIdleDays: readNumber('evictIdleDays', '闲置天数', 1, 90),
       excludedGroups: readGroups('excludedGroups', '排除分组'),
       allowedGroups: readGroups('allowedGroups', '仅允许分组'),
       requirePassed: $('requirePassed').checked,
@@ -427,6 +430,9 @@
       // Key inventory: what exists, which connection created it, and whether it ever carried a request.
       const keyRows = Array.isArray(account.keys) ? account.keys : [];
       const neverUsed = keyRows.filter(key => key.owned === true && !key.lastUsedAt).length;
+      const evicted = Array.isArray(account.evictions) ? account.evictions : [];
+      const evictionLine = evicted.length ? '<p class="account-note">按策略清理 ' + evicted.length + ' 把闲置 Key：'
+        + evicted.slice(0, 3).map(gone => 'g' + escapeHtml(String(gone.groupId ?? '—')) + ' · ' + clock(gone.at)).join(' · ') + '</p>' : '';
       const keyPool = keyRows.length ? '<details class="account-keys"><summary>Key 池 ' + keyRows.length + ' 把'
         + (neverUsed ? ' · 未使用 ' + neverUsed + ' 把（可撤销）' : '') + '</summary><ul>'
         + keyRows.slice(0, 12).map(key => '<li><span>' + escapeHtml(platformLabel[key.platform] ?? key.platform ?? '—')
@@ -443,7 +449,7 @@
         + '<div><dt>本月消耗</dt><dd>' + money(total('monthlyUsage')) + '</dd></div>'
         + '<div><dt>累计请求</dt><dd>' + (usage && num(usage.requests) !== null ? num(usage.requests).toLocaleString('zh-CN') : '—') + '</dd></div>'
         + '<div><dt>专用 Key</dt><dd>' + (keys.ready ?? 0) + (keys.maxKeysPerAccount ? ' / ' + keys.maxKeysPerAccount : '') + '</dd></div>'
-        + '</dl>' + platformList + eventLine + keyPool + '</article>';
+        + '</dl>' + platformList + eventLine + evictionLine + keyPool + '</article>';
     }).join('');
   }
 

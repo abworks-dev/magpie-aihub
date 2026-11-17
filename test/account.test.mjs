@@ -14,6 +14,28 @@ const pathOf = url => new URL(url).pathname;
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 
 // Every Account has an injected fetcher. Responses are local Web API objects only.
+test('idle keys are evicted only past the window, past the keep set, and only with apply', async () => {
+  const now = Date.parse('2026-11-18T00:00:00Z');
+  const account = new Account(managed({ keys: [{ groupId: 2, platform: 'openai', key: 'k2', remoteId: 22, name: 'magpie-aihub-test-instanc-g2', owned: true }] }), {
+    now: () => now, save: async () => {}, fetcher: async () => json([]),
+  });
+  account.ownRemoteKeys = async () => [
+    { id: 11, group_id: 1, name: 'magpie-aihub-test-instanc-g1', created_at: '2026-10-01T00:00:00Z' },
+    { id: 12, group_id: 2, name: 'magpie-aihub-test-instanc-g2', created_at: '2026-10-01T00:00:00Z' },
+    { id: 13, group_id: 3, name: 'magpie-aihub-test-instanc-g3', created_at: '2026-11-17T00:00:00Z' },
+    { id: 14, group_id: 4, name: 'someone-else', created_at: '2026-10-01T00:00:00Z' },
+    { id: 15, group_id: 5, name: 'magpie-aihub-test-instanc-g5' },
+  ];
+  const removed = [];
+  account.deleteRemoteKey = async id => { removed.push(id); };
+  const dry = await account.evictIdle({ keep: new Set([2]), days: 7 });
+  assert.deepEqual(dry.candidates.map(row => row.groupId), [1]);
+  assert.deepEqual(removed, []);
+  const applied = await account.evictIdle({ keep: new Set([2]), days: 7, apply: true });
+  assert.deepEqual(applied.deleted.map(row => row.groupId), [1]);
+  assert.deepEqual(removed, [11]);
+});
+
 test('pending creation must be durably saved before POST, and create sends only name and group_id', async () => {
   const saveStarted = deferred(), releaseSave = deferred();
   const events = [], snapshots = [], posts = [];

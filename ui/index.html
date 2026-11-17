@@ -145,6 +145,16 @@
                   <input id="keysPerPlatform" name="keysPerPlatform" type="number" min="0" max="32" step="1" value="0">
                   <small>每个平台最多占几把专用 Key，0 表示不限制；防止分组多的平台吃满候选池。</small>
                 </label>
+                <label class="field">
+                  <span class="field-label">新模型换组时淘汰闲置 Key</span>
+                  <input id="evictIdleKeys" name="evictIdleKeys" type="checkbox">
+                  <small>默认关闭。只在 Key 名额已满、且新模型所在分组没有 Key 时触发一次：淘汰插件自建、超过闲置天数、又不在本次候选里的 Key。</small>
+                </label>
+                <label class="field">
+                  <span class="field-label">闲置天数</span>
+                  <input id="evictIdleDays" name="evictIdleDays" type="number" min="1" max="90" step="1" value="7">
+                  <small>超过这个天数没有使用才可能被淘汰；没有时间记录的 Key 一律保留。</small>
+                </label>
               </div>
             </section>
 

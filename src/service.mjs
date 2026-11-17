@@ -138,6 +138,7 @@ export function snapshotView(raw) {
       keys: list(account?.keys, 32).map(key => ({
         groupId: id(key?.groupId), platform: code(key?.platform), owned: bool(key?.owned), lastUsedAt: timestamp(key?.lastUsedAt),
       })),
+      evictions: list(account?.evictions, 8).map(gone => ({ at: timestamp(gone?.at), groupId: id(gone?.groupId), name: code(gone?.name) })),
       keyEvents: list(account?.keyEvents, 8).map(event => ({
         at: timestamp(event?.at), action: code(event?.action), groupId: id(event?.groupId), code: code(event?.code),
       })).filter(event => event.action),

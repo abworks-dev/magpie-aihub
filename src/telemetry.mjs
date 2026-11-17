@@ -77,6 +77,7 @@ export async function monitorSnapshot(runtimes, options, now = Date.now) {
         groupId: key.groupId, platform: text(key.platform ?? 'openai'), owned: key.owned === true,
         lastUsedAt: finite([...router.lastRoutes].reverse().find(route => route.groupId === key.groupId)?.at),
       })),
+      evictions: (router.evictions ?? []).slice(0, 8).map(gone => ({ at: finite(gone.at), groupId: id(gone.groupId), name: text(gone.name) })),
       keyState: { ready: account.data.keys.length, pending: account.data.pending ? 1 : 0, autoCreateKeys: options.autoCreateKeys, maxKeysPerAccount: options.maxKeysPerAccount, minBalance: options.minBalance },
       billing: billing ? {
         at: finite(billing.at), balance: finite(billing.balance), balanceKnown: billing.balanceKnown === true,

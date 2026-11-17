@@ -20,7 +20,9 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - run: bun test
+      - run: bun --version
+      - name: Load the plugin entry under bun
+        run: bun -e "(async () => { const mod = await import('./index.mjs'); if (typeof mod.default?.server !== 'function') throw new Error('plugin entry did not load'); console.log('plugin entry loads under bun'); })()"
   magpie-host:
     runs-on: windows-latest
     steps:

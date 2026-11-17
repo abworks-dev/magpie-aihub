@@ -45,6 +45,8 @@ export class Router {
   constructor(account, options, { fetcher = globalThis.fetch, now = Date.now } = {}) {
     this.account = account; this.o = options; this.fetcher = fetcher; this.now = now;
     this.sessions = new Map(); this.cooldown = new Map(); this.latency = new Map(); this.rejected = new Map();
+    // What the eviction policy actually gave back, newest first; the page shows it.
+    this.evictions = [];
     this.locks = new Map(); this.lastRoutes = [];
     this.health = new Map(); this.spend = { day: '', usd: 0, tokens: 0 };
     this.priceSeen = new Map(); this.priceChanges = []; this.counters = { requests: 0, failures: 0 };
@@ -252,7 +254,11 @@ export class Router {
         const bare = this.o.bareModelIds;
         return Response.json({ object: 'list', data: (await this.discover(request.signal)).map(id => ({ id: bare ? bareModelId(id) : id, object: 'model', owned_by: 'aihub' })) });
       }
-      catch { return errorResponse('Cannot discover models; configure explicit model IDs or check group credentials'); }
+      catch (error) {
+        // Magpie only sees "zero models": keep the reason where the operator reads logs.
+        console.error(`[aihub-auto] model discovery failed: ${error?.message ?? error}`);
+        return errorResponse('Cannot discover models; configure explicit model IDs or check group credentials');
+      }
     }
     if (request.method !== 'POST') return errorResponse('Method not allowed', 405);
     const budget = new AbortController();
@@ -340,9 +346,21 @@ export class Router {
         candidates = candidates.filter(c => keyedGroups.has(c.groupId) || (used.get(c.platform ?? 'openai') ?? 0) < this.o.keysPerPlatform);
       }
       // A full managed pool does not create/delete keys just because market rankings move.
+      // The one exception is opt-in: when a full pool is the only thing keeping this
+      // model from a group, give the least recently used key its slot back.
       const beforePool = candidates;
-      if (this.account.data.mode === 'managed' && this.account.data.keys.length >= this.o.maxKeysPerAccount)
-        candidates = candidates.filter(c => this.account.data.keys.some(k => k.groupId === c.groupId));
+      if (this.account.data.mode === 'managed' && this.account.data.keys.length >= this.o.maxKeysPerAccount) {
+        let freed = 0;
+        if (this.o.evictIdleKeys && typeof this.account.evictIdle === 'function') {
+          const keep = new Set(candidates.map(c => c.groupId));
+          const outcome = await this.account.evictIdle({ keep, days: this.o.evictIdleDays, apply: true }, signal).catch(() => null);
+          for (const gone of outcome?.deleted ?? []) this.evictions.unshift({ at: this.now(), groupId: gone.groupId, name: gone.name });
+          if (this.evictions.length > 20) this.evictions.length = 20;
+          freed = outcome?.deleted?.length ?? 0;
+        }
+        // Without a freed slot only the groups that already carry a key can work.
+        if (freed === 0) candidates = candidates.filter(c => this.account.data.keys.some(k => k.groupId === c.groupId));
+      }
       // The pool size bounds how many candidates one request keeps looking at;
       // it no longer doubles as a key budget.
       candidates = candidates.slice(0, Math.max(1, this.o.poolSize));
