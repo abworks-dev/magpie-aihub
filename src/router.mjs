@@ -145,7 +145,23 @@ export class Router {
     if ((c.rejected ?? []).includes(model) || this.rejected.has(`${c.groupId}:${model}`)) return 'model rejected';
     return '';
   }
-  routeFailure(rows, model, platform) {
+  /** Which platforms were looked at, and how many groups there publish this model. */
+  describeCatalogue(catalogue, model) {
+    const byPlatform = new Map();
+    let cards = 0;
+    for (const c of catalogue) {
+      const platformId = c.platform ?? 'openai';
+      const bucket = byPlatform.get(platformId) ?? { groups: 0, listed: 0 };
+      bucket.groups += 1;
+      const listed = this.listedModels(c);
+      if (listed && listed.length) cards += 1;
+      if (listed?.some(id => bareModelId(id) === model)) bucket.listed += 1;
+      byPlatform.set(platformId, bucket);
+    }
+    const parts = [...byPlatform].map(([platformId, bucket]) => `${platformId} ${bucket.listed}/${bucket.groups}`).join(', ');
+    return `enabled ${this.o.platforms.join('/')}; ${parts}; ${cards} groups publish model cards`;
+  }
+  routeFailure(rows, model, platform, catalogue = rows) {
     const tally = new Map();
     let cheapest = null;
     for (const c of rows) {
@@ -160,7 +176,7 @@ export class Router {
         ? `${why} ×${n} (cheapest rejected ×${Number(cheapest).toFixed(3)})`
         : `${why} ×${n}`).join(', ');
     const unmatched = rows.filter(c => this.listedModels(c)?.some(id => bareModelId(id) === model) ?? false).length;
-    return `No eligible AIHub route remains within the configured multiplier and attempt limits (platform ${platform}, cap ×${Number(cap).toFixed(3)}, ${rows.length} groups, ${unmatched} list this model: ${top || 'all filtered by platform'})`;
+    return `No eligible AIHub route remains within the configured multiplier and attempt limits (platform ${platform}, cap ×${Number(cap).toFixed(3)}, ${rows.length} groups, ${unmatched} list this model: ${top || 'all filtered by platform'}) [${this.describeCatalogue(catalogue, model)}]`;
   }
   eligible(c, model, platform = c.platform ?? 'openai', { requirePrice = this.o.strategy === 'price', strict = false } = {}) {
     const listed = this.listedModels(c);
@@ -427,7 +443,7 @@ export class Router {
       const note = poolBlocked > 0
         ? `; ${poolBlocked} more groups have no dedicated key and the pool is full (${this.account.data.keys.length} of ${this.o.poolSize} keys); raise the pool size or revoke an unused key`
         : '';
-      return errorResponse(this.routeFailure(catalogue.filter(c => (c.platform ?? 'openai') === platform), model, platform) + note, 503, 'no_eligible_route');
+      return errorResponse(this.routeFailure(catalogue.filter(c => (c.platform ?? 'openai') === platform), model, platform, catalogue) + note, 503, 'no_eligible_route');
     } catch {
       if (request.signal.aborted) throw request.signal.reason;
       return errorResponse(signal.aborted ? 'AIHub routing deadline exceeded' : 'AIHub catalogue unavailable or no usable route');
