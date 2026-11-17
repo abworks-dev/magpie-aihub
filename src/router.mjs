@@ -140,8 +140,18 @@ export class Router {
   }
   routeFailure(rows, model, platform) {
     const tally = new Map();
-    for (const c of rows) { const why = this.whyNot(c, model, platform); if (why) tally.set(why, (tally.get(why) ?? 0) + 1); }
-    const top = [...tally].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([why, n]) => `${why} ×${n}`).join(', ');
+    let cheapest = null;
+    for (const c of rows) {
+      const why = this.whyNot(c, model, platform);
+      if (!why) continue;
+      tally.set(why, (tally.get(why) ?? 0) + 1);
+      if (why === 'over the multiplier cap' && (cheapest === null || c.multiplier < cheapest)) cheapest = c.multiplier;
+    }
+    const cap = this.capFor(platform);
+    const top = [...tally].sort((a, b) => b[1] - a[1]).slice(0, 3)
+      .map(([why, n]) => why === 'over the multiplier cap' && cheapest !== null
+        ? `${why} ×${n} (cap ×${cap}, cheapest rejected ×${Number(cheapest).toFixed(3)})`
+        : `${why} ×${n}`).join(', ');
     return `No eligible AIHub route remains within the configured multiplier and attempt limits (${rows.length} groups: ${top || 'all filtered by platform'})`;
   }
   eligible(c, model, platform = c.platform ?? 'openai', { requirePrice = this.o.strategy === 'price' } = {}) {
@@ -381,7 +391,9 @@ export class Router {
           if (session) this.sessions.delete(session);
         } finally { clearTimeout(timer); }
       }
-      const note = poolBlocked > 0 ? `; ${poolBlocked} more groups have no dedicated key and the pool is full` : '';
+      const note = poolBlocked > 0
+        ? `; ${poolBlocked} more groups have no dedicated key and the pool is full (${this.account.data.keys.length} of ${this.o.poolSize} keys); raise the pool size or revoke an unused key`
+        : '';
       return errorResponse(this.routeFailure(catalogue.filter(c => (c.platform ?? 'openai') === platform), model, platform) + note, 503, 'no_eligible_route');
     } catch {
       if (request.signal.aborted) throw request.signal.reason;
