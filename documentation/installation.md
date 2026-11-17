@@ -79,7 +79,7 @@ handle @magpie_plugin_service {
 | 没有模型 / 没有候选 | 已认证、是否显式列表、启用平台、命名空间/协议、倍率/组名单/检测要求与目录权限 |
 | key_not_imported / key_creation_disabled | 导入该组 Key，或确认创建副作用后启用自动创建 |
 | key_pool_full / key_creation_pending / key_creation_incomplete / key_duplicate | 核对本实例专用名称、远端 Key、池大小与未知创建结果；不盲目重建或清理 |
-| key_sign_in_required / key_access_denied / key_rate_limited / key_preparation_failed | 重新连接、核对权限/限流/管理接口状态；错误响应已脱敏 |
+| key_sign_in_required / key_session_expired / key_access_denied / key_rate_limited / key_preparation_failed | 重新连接、核对权限/限流/管理接口状态；错误响应已脱敏 |
 | 需要验证码 / 2FA | 转用手工 Key；不公开凭据 |
 
 不要提供带登录 query、Authorization、Cookie 或完整 body 的截图/网络导出。安装、页面展示、目录发现、六平台真实计费请求和生产监控是分别验收的步骤。

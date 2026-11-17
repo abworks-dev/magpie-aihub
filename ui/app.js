@@ -4,6 +4,14 @@
   const PROVIDER = 'aihub-auto';
   const platforms = ['openai', 'deepseek', 'zhipu', 'kimi', 'grok', 'gemini'];
   const platformLabel = { openai: 'OpenAI', deepseek: 'DeepSeek', zhipu: '智谱', kimi: 'Kimi', grok: 'Grok', gemini: 'Gemini' };
+  const catalogueLabels = {
+    session_expired: '登录已失效，请重新登录', account_sign_in_required: '账户登录态缺失',
+    catalogue_access_denied: '目录无权限', catalogue_unavailable: '目录读取失败',
+  };
+  const billingLabels = {
+    billing_session_expired: '登录已失效，请重新登录', billing_sign_in_required: '账户登录态缺失',
+    billing_access_denied: '账单接口无权限', billing_unavailable: '账单读取失败',
+  };
   const defaults = {
     strategy: 'balanced', maxMultiplier: 0.16, maxAttempts: 3, poolSize: 4,
     excludedGroups: [], allowedGroups: [], requirePassed: false,
@@ -351,7 +359,7 @@
         + '<span class="pill pill-neutral">' + mode + '</span>'
         + (account.stale ? '<span class="pill pill-off">目录较旧</span>' : '') + '</header>';
       if (!billing) {
-        const why = account.billingError ? '余额读取失败：' + escapeHtml(account.billingError)
+        const why = account.billingError ? '余额读取失败：' + escapeHtml(billingLabels[account.billingError] ?? account.billingError)
           : account.mode === 'manual' ? '手工 Key 模式不读取账户余额' : '余额尚未读取';
         return '<article class="account-card">' + head + '<p class="account-empty">' + why + '</p></article>';
       }
@@ -412,7 +420,7 @@
     renderAccounts(accountsList);
 
     $('monitor-summary').innerHTML = [
-      ['账户', accountsList.length, errorCode ? `目录：${escapeHtml(errorCode)}` : stale ? '目录较旧' : '目录已刷新'],
+      ['账户', accountsList.length, errorCode ? `目录：${escapeHtml(catalogueLabels[errorCode] ?? errorCode)}` : stale ? '目录较旧' : '目录已刷新'],
       ['分组', rows.length, '来自当前目录'],
       ['可用分组', eligible, `${rows.length - eligible} 个被排除或不可用`],
       ['路由记录', routes.length, '最近 100 条内存记录'],

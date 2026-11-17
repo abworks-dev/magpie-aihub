@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { KeyError, keyFailure } from '../src/errors.mjs';
+import { KeyError, SessionExpired, keyFailure } from '../src/errors.mjs';
 import { Account } from '../src/account.mjs';
 import { Router } from '../src/router.mjs';
 import { ORIGIN, settings } from '../src/config.mjs';
@@ -134,4 +134,12 @@ test('ambiguous or unrelated recovery records cannot resolve pending or cause re
     assert.equal(saves, 0);
     assert.equal(writes, 0);
   });
+});
+
+test('a rejected refresh maps to a distinct session expiry, not a permission error', () => {
+  const mapped = keyFailure(new SessionExpired());
+  assert.equal(mapped.code, 'key_session_expired');
+  assert.match(mapped.message, /重新登录/);
+  assert.equal(JSON.stringify(mapped).includes('Bearer'), false);
+  assert.equal(keyFailure(Object.assign(new Error('denied'), { status: 401 })).code, 'key_sign_in_required');
 });

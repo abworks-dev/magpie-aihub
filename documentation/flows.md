@@ -53,7 +53,7 @@ v0.3.1 预发布版本的代码阅读映射。已有 local mock 和 Edge 合成�
 5. 生成 UUID 幂等键，先将 pending 写入 auth；保存成功后才单次 POST /api/v1/keys，body 仅 name / group_id，附 Idempotency-Key。未知到期情况下创建收到 401 仍保留 pending 并停止，不刷新后重试。
 6. 校验返回 key / id / group_id / 名称，必要时重新列表恢复；完整结果加入带平台信息的 owned Key、清除 pending，再保存；失败保留可核实状态。
 
-Key 准备失败立即停止当前路由，返回 error.type=aihub_routing_error 及稳定 code / 安全 message：key_not_imported、key_pool_full、key_creation_pending、key_duplicate、key_creation_disabled、key_creation_incomplete；管理状态 401 / 403 / 429 映射 key_sign_in_required / key_access_denied / key_rate_limited，其余 key_preparation_failed。不返回原始管理响应，不通过换组或盲目重建掩盖未知结果。
+Key 准备失败立即停止当前路由，返回 error.type=aihub_routing_error 及稳定 code / 安全 message：key_not_imported、key_pool_full、key_creation_pending、key_duplicate、key_creation_disabled、key_creation_incomplete；管理状态 401 / 403 / 429 映射 key_sign_in_required / key_session_expired / key_access_denied / key_rate_limited，其余 key_preparation_failed。不返回原始管理响应，不通过换组或盲目重建掩盖未知结果。
 
 证据：[keyFor](../src/account.mjs)、[错误](../src/errors.mjs)、[路由错误](../src/router.mjs)。无 DELETE / PUT、无远端 Key 配额设置；关闭自动创建不撤销 Key。取消等待不能证明已发出的远端创建未发生。
 

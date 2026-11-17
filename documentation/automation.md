@@ -59,7 +59,7 @@
 
 设置与监控是同一份页面，由 page.service 在 127.0.0.1 提供；`monitorPort=19871` 是未生产分配的默认候选。`magpie web` 把服务代理到插件页面路径下，桌面版不代理、页面提示在本机打开回环地址。服务仅接受 GET/HEAD，要求精确 Host、Origin 缺省或 `null`、无 body；`/snapshot` 另需服务注入页面的进程级 token，响应 `Access-Control-Allow-Origin: null`。监控可读取远端目录，并可能刷新/保存管理令牌，不推理探测、不创建 Key。快照字段白名单与脱敏后才返回；缺失或未就绪指标 null。Cloud 仅批准四个静态资源，未批准 service 新路由，opc-agent 生产私有路径拒绝不能绕过。
 
-Key 准备错误使用稳定 code：`key_not_imported`、`key_pool_full`、`key_cap_reached`、`balance_too_low`、`key_creation_pending`、`key_duplicate`、`key_creation_disabled`、`key_creation_incomplete`；管理状态映射为 `key_sign_in_required` / `key_access_denied` / `key_rate_limited`，其余为 `key_preparation_failed`。这些失败停止当前请求，不公开原始响应，不通过换组或盲目重建掩盖未知创建结果。见 [错误](../src/errors.mjs)、[Key 准备](../src/account.mjs)、[页面服务](../src/service.mjs)。
+Key 准备错误使用稳定 code：`key_not_imported`、`key_pool_full`、`key_cap_reached`、`balance_too_low`、`key_creation_pending`、`key_duplicate`、`key_creation_disabled`、`key_creation_incomplete`；管理状态映射为 `key_sign_in_required` / `key_session_expired` / `key_access_denied` / `key_rate_limited`，其余为 `key_preparation_failed`。这些失败停止当前请求，不公开原始响应，不通过换组或盲目重建掩盖未知创建结果。见 [错误](../src/errors.mjs)、[Key 准备](../src/account.mjs)、[页面服务](../src/service.mjs)。
 
 余额读取走 `/api/v1/auth/me`、`/api/v1/usage/stats`、`/api/v1/user/platform-quotas`，默认 60 秒缓存；读取失败显示 `billing_unavailable` 并在 10 分钟内沿用旧快照。余额仅在读取到数值时参与 `minBalance` 门限，不参与路由排序，也不读会返回明文 Key 的 `/api/v1/keys`。见 [余额](../src/billing.mjs)。
 

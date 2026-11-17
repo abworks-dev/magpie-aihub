@@ -103,7 +103,7 @@ github:abworks-dev/magpie-aihub
 
 服务只监听回环，仅接受 GET/HEAD，并要求精确 `Host`、`Origin` 缺省或为 `null`、无请求体；快照还需要服务注入到页面里的进程级令牌（`x-aihub-service-token`），因此别的站点或被沙箱化的第三方页面无法读取。Cloud 当前仅批准四个静态资源，未批准 service 新路由，不能据此声称生产监控已接通。如果 `magpie web` 前面还有反向代理或入口（Caddy/Nginx/Cloudflare 等），它必须原样转发 `/_magpie/plugin/<32 位 token>/_magpie/service/` 及其下的 `snapshot`，并且**不能剥离路径前缀**；只放行 `index.html`、`app.js`、`style.css`、`_magpie/bridge.js` 时，点「监控」会落到代理自己的 404 页（如 Caddy 的 `Not exposed by this Magpie entry.`），这不是插件渲染错误。
 
-快照顶部为账户卡：余额、冻结金额、今日/本月消耗（按平台配额汇总）、累计请求、专用 Key 数量与上限、各平台日/月用量与限额，以及最近建 Key/阻止事件。余额数据以 60 秒间隔读取 `/api/v1/auth/me`、`/api/v1/usage/stats`、`/api/v1/user/platform-quotas`；读取失败时沿用上次快照（最多 10 分钟），并显示 `billing_unavailable`、`billing_access_denied` 或 `billing_sign_in_required`，不推断数值。`/api/v1/keys` 会返回明文 Key，插件不读取也不记录该接口。
+快照顶部为账户卡：余额、冻结金额、今日/本月消耗（按平台配额汇总）、累计请求、专用 Key 数量与上限、各平台日/月用量与限额，以及最近建 Key/阻止事件。余额数据以 60 秒间隔读取 `/api/v1/auth/me`、`/api/v1/usage/stats`、`/api/v1/user/platform-quotas`；读取失败时沿用上次快照（最多 10 分钟），并显示 `billing_unavailable`、`billing_access_denied` 或 `billing_sign_in_required` / `billing_session_expired`，不推断数值。`/api/v1/keys` 会返回明文 Key；插件只在恢复本实例创建的专用 Key 时读取该列表（按实例命名精确匹配），不做批量导出、不记录明文。
 
 快照展示分组可用性/筛选原因、倍率、可得的成功率/TPS/缓存命中率/价格、目录新鲜度、Key 数量及最近 100 条内存路由结果。缺失、未就绪或不可信的指标为 `null`。快照不返回原始认证包、Key、Cookie、请求/响应 body 或会话 ID。监控读取可按需发起远端目录 GET，并可能触发管理令牌刷新与保存；**不会推理探测或创建 Key**（但若自动发现与 `autoCreateKeys` 同时开启，业务请求仍可能触发建 Key）。
 
@@ -115,7 +115,7 @@ Key 准备失败返回稳定的 `error.code` 和脱敏信息，停止本次请�
 | `key_pool_full` | 核对已有专用 Key 与池上限；插件不自动删除轮换 |
 | `key_creation_pending` / `key_creation_incomplete` | 到 AIHub 核对专用名称与未知结果，避免重复建 Key |
 | `key_duplicate` | 人工核对同名同组冲突，插件不自动选择或清理 |
-| `key_sign_in_required` / `key_access_denied` | 重新认证或核对账号权限 |
+| `key_sign_in_required` / `key_session_expired` / `key_access_denied` | 重新认证或核对账号权限 |
 | `key_rate_limited` / `key_preparation_failed` | 按脱敏提示核对限流/管理接口状态，不公开原始响应 |
 
 ## 路由边界

@@ -93,7 +93,15 @@ async function AIHubPlugin({ client }, initialOptions = {}) {
       id: PROVIDER,
       models: async (provider, { auth, signal } = {}) => {
         if (options.models.length || !auth?.key) return provider.models ?? {};
-        const ids = await runtime(auth).router.discover(signal);
+        const ids = await runtime(auth)
+          .router.discover(signal)
+          .catch(error => {
+            // A dead session must not blank the provider catalogue: keep the models
+            // Magpie already knows so the connection stays selectable and retryable.
+            console.error(`[aihub-auto] model discovery unavailable: ${error?.message ?? error ?? 'unknown error'}`);
+            return null;
+          });
+        if (!ids) return provider?.models ?? {};
         return Object.fromEntries(ids.map(id => {
           const descriptor = modelDescriptor(id, id.startsWith('gemini::') ? 'responses' : options.defaultApi);
           return [id, {

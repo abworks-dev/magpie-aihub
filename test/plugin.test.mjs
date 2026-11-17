@@ -100,3 +100,14 @@ test('configuration refuses unknown secret fields and invalid numeric values', (
   assert.equal(settings().autoCreateKeys, false);
   assert.throws(() => manualBundle('[{"groupId":1,"key":"fake"}]'), /multiplier/);
 });
+
+test('model discovery failure keeps the provider catalogue instead of blanking it', async () => {
+  const hooks = await entry.server({ client: {} });
+  const key = JSON.stringify({ version: 1, mode: 'managed', instanceId: 'catalogue-fallback', access: 'expired-access', keys: [] });
+  const priorFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ error: 'expired' }), { status: 401 });
+  try {
+    const kept = await hooks.provider.models({ models: { kept: { id: 'kept' } } }, { auth: { key } });
+    assert.deepEqual(Object.keys(kept), ['kept']);
+  } finally { globalThis.fetch = priorFetch; }
+});

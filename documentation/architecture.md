@@ -40,7 +40,7 @@ magpie-aihub 是 Magpie 的消费端供应商插件：用用户自己的 AIHub �
 
 服务只监听 127.0.0.1，仅接受 GET/HEAD，要求精确 Host、Origin 缺省或 `null`、无请求体；`/snapshot` 还需要服务注入到页面 `<meta>` 的进程级令牌（`x-aihub-service-token`），响应带 `Access-Control-Allow-Origin: null`，因此沙箱页面可读而其他站点/第三方框架不可读。捷径：服务在 web 代理下被沙箱化，无法保证同源。
 
-账户模式的快照还带余额卡：`/api/v1/auth/me` 的可用/冻结余额与充值总额、`/api/v1/usage/stats` 的累计请求与消耗、`/api/v1/user/platform-quotas` 的六平台日/月限额与用量，按 60 秒缓存读取；读取失败时沿用最多 10 分钟的旧快照，否则显示 `billing_unavailable` / `billing_access_denied` / `billing_sign_in_required`。余额只用于展示与 `minBalance` 建 Key 门限，不参与路由排序；`/api/v1/keys` 返回明文 Key，插件不读该接口。
+账户模式的快照还带余额卡：`/api/v1/auth/me` 的可用/冻结余额与充值总额、`/api/v1/usage/stats` 的累计请求与消耗、`/api/v1/user/platform-quotas` 的六平台日/月限额与用量，按 60 秒缓存读取；读取失败时沿用最多 10 分钟的旧快照，否则显示 `billing_unavailable` / `billing_access_denied` / `billing_sign_in_required` / `billing_session_expired`。余额只用于展示与 `minBalance` 建 Key 门限，不参与路由排序；`/api/v1/keys` 返回明文 Key，插件只在恢复本实例创建的 Key 时读取该列表，不做批量导出、不记录明文。
 
 快照经过字段白名单、数量/大小限制和脱敏，不返回原始 auth、请求 body、session ID 或管理响应。最近路由最多 100 条，仅进程内存；缺失/未就绪指标为 null，不能当成零或健康证据。
 

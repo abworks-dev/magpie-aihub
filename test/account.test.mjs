@@ -397,3 +397,9 @@ test('billing keeps nulls when usage endpoints are unavailable and caches the re
   await account.billingInfo(options());
   assert.equal(reads, 1);
 });
+
+test('a rejected refresh reports an expired session instead of a bare 401', async () => {
+  const account = new Account(managed(), { save: async () => {}, fetcher: async () => json({ error: 'expired' }, 401) });
+  await assert.rejects(account.call('/api/v1/groups/available'), error =>
+    error.name === 'SessionExpired' && error.code === 'session_expired' && error.status === 401);
+});

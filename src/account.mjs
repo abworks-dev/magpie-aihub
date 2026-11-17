@@ -3,7 +3,7 @@ import { waitFor } from './async.mjs';
 import { api, list, tokenFields, normalizeHall, groupInventory, ApiError } from './api.mjs';
 import { loadBilling } from './billing.mjs';
 import { BASE, PROVIDER } from './config.mjs';
-import { KeyError } from './errors.mjs';
+import { KeyError, SessionExpired } from './errors.mjs';
 
 export class Account {
   constructor(data, { save, fetcher = globalThis.fetch, now = Date.now } = {}) {
@@ -40,6 +40,12 @@ export class Account {
     Object.assign(this.data, tokenFields(result, this.data));
     await this.save();
   }
+  // A rejected refresh is a dead session, not a permission problem: map it once,
+  // in front of every caller, so routing and the monitor can say "sign in again".
+  async renewSession(signal) {
+    try { return await this.renew(signal); }
+    catch (error) { throw error?.status === 401 ? new SessionExpired() : error; }
+  }
   async call(path, args = {}) {
     const usedAccess = this.data.access;
     const invoke = () => api(path, { ...args, token: this.data.access, fetcher: this.fetcher });
@@ -48,7 +54,7 @@ export class Account {
       if (!(e instanceof ApiError) || e.status !== 401 || !this.data.refresh) throw e;
       // Separate refresh lock: call() can execute inside a key mutation transaction.
       if (this.data.access === usedAccess) {
-        if (!this.refreshingAuth) this.refreshingAuth = this.renew(args.signal).finally(() => { this.refreshingAuth = undefined; });
+        if (!this.refreshingAuth) this.refreshingAuth = this.renewSession(args.signal).finally(() => { this.refreshingAuth = undefined; });
         await waitFor(this.refreshingAuth, args.signal);
       }
       // Never replay a write: even an unusual auth rejection is not proof it had no effect.
@@ -103,7 +109,8 @@ export class Account {
       this.billingRefresh = loadBilling(this, signal)
         .then(info => { this.billing = info; this.billingError = undefined; return info; })
         .catch(error => {
-          this.billingError = error?.status === 401 ? 'billing_sign_in_required'
+          this.billingError = error instanceof SessionExpired ? 'billing_session_expired'
+            : error?.status === 401 ? 'billing_sign_in_required'
             : error?.status === 403 ? 'billing_access_denied' : 'billing_unavailable';
           if (this.billing && this.now() - this.billing.at <= o.maxStaleMs) return this.billing;
           return undefined;
@@ -143,7 +150,7 @@ export class Account {
         if (found.length > 1) throw new KeyError('key_duplicate', '发现重复的专用 Key，请先在 AIHub 处理重复记录。');
         return found[0];
       };
-      if (this.data.refresh && this.data.expires && this.data.expires <= this.now() + 30000) await this.renew(signal);
+      if (this.data.refresh && this.data.expires && this.data.expires <= this.now() + 30000) await this.renewSession(signal);
       let remote = await recover();
       if (remote) this.note('recovered', candidate.groupId, 'recovered');
       if (!remote && pending) throw new KeyError('key_creation_pending', '此前创建 Key 的结果未知，请在 AIHub 检查；插件不会重复创建。');

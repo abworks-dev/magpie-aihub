@@ -1,4 +1,5 @@
 // Explicit public-state projection. Never serialize Account.data or raw remote payloads.
+import { SessionExpired } from './errors.mjs';
 const finite = value => typeof value === 'number' && Number.isFinite(value) ? value : null;
 const text = value => typeof value === 'string' ? value.replace(/[\u0000-\u001f]/g, '').slice(0, 160) : '';
 
@@ -7,7 +8,7 @@ export async function monitorSnapshot(runtimes, options, now = Date.now) {
   for (const { account, router } of [...runtimes.values()].slice(0, 32)) {
     let errorCode;
     try { await account.catalogue(options, AbortSignal.timeout(15000)); }
-    catch (error) { errorCode = error?.status === 401 ? 'account_sign_in_required' : error?.status === 403 ? 'catalogue_access_denied' : 'catalogue_unavailable'; }
+    catch (error) { errorCode = error instanceof SessionExpired ? 'session_expired' : error?.status === 401 ? 'account_sign_in_required' : error?.status === 403 ? 'catalogue_access_denied' : 'catalogue_unavailable'; }
     router.prune();
     let billing;
     try { billing = await account.billingInfo(options, AbortSignal.timeout(15000)); }

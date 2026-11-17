@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { monitorSnapshot } from '../src/telemetry.mjs';
 import { settings } from '../src/config.mjs';
+import { SessionExpired } from '../src/errors.mjs';
 
 test('monitor projects only catalogue and route metadata, with anonymous account scope and no inference/key operations', async () => {
   let reads = 0;
@@ -58,4 +59,11 @@ test('monitor exposes billing and key audit metadata without account identity', 
   assert.deepEqual(result.accounts[0].keyEvents, [{ at: 10, action: 'created', groupId: 4, code: 'created' }]);
   assert.equal(result.accounts[0].keyState.maxKeysPerAccount, 8);
   assert.equal(result.accounts[0].keyState.minBalance, 0);
+});
+
+test('a dead session is reported as session_expired, not a generic catalogue failure', async () => {
+  const runtime = { account: { data: { mode: 'managed', keys: [] }, catalogue: async () => { throw new SessionExpired(); } }, router: { prune() {}, cooldown: new Map(), sessions: new Map() } };
+  const result = await monitorSnapshot(new Map([['dead', runtime]]), settings());
+  assert.equal(result.accounts[0].errorCode, 'session_expired');
+  assert.equal(result.accounts[0].stale, true);
 });
