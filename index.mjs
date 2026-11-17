@@ -8,6 +8,34 @@ import { startService } from './src/service.mjs';
 import { monitorSnapshot } from './src/telemetry.mjs';
 import { adoptRuntime } from './src/runtime.mjs';
 
+/**
+ * Keys this plugin created that no live group still routes through. The dry run
+ * is the default: the page asks with apply:true only after the user confirms.
+ */
+async function pruneIdleKeys(runtimes, apply) {
+  const result = { apply, candidates: [], deleted: 0, failed: [] };
+  for (const item of runtimes.values()) {
+    const account = item?.account;
+    if (!account || account.data?.mode !== 'managed') continue;
+    let remote;
+    try { remote = await account.ownRemoteKeys(); }
+    catch (error) { result.failed.push({ step: 'list', message: String(error?.message ?? error) }); continue; }
+    const inUse = new Set((account.data.keys ?? []).map(key => Number(key?.groupId)).filter(Number.isFinite));
+    for (const key of remote) {
+      const name = String(key?.name ?? '');
+      const groupId = Number(key?.group_id ?? key?.groupId ?? /-g(\d+)$/.exec(name)?.[1]);
+      if (!name.startsWith('magpie-aihub-')) continue;        // never touch a key the user made
+      if (inUse.has(groupId)) continue;                        // a live group still uses it
+      const entry = { id: key?.id, name, groupId: Number.isFinite(groupId) ? groupId : null };
+      result.candidates.push(entry);
+      if (!apply) continue;
+      try { await account.deleteRemoteKey(key.id); result.deleted += 1; }
+      catch (error) { result.failed.push({ ...entry, message: String(error?.message ?? error) }); }
+    }
+  }
+  return result;
+}
+
 async function AIHubPlugin({ client }, initialOptions = {}) {
   const options = settings(initialOptions);
   const runtimes = new Map();
@@ -19,6 +47,7 @@ async function AIHubPlugin({ client }, initialOptions = {}) {
     await startService({
       port: options.monitorPort,
       getSnapshot: () => monitorSnapshot(runtimes, options),
+      prune: async ({ apply } = {}) => pruneIdleKeys(runtimes, apply === true),
       getIdentities: () => [...runtimes.values()].slice(0, 32).map(item => item.account?.data?.identity ?? ''),
       getMetrics: () => {
         const items = [...runtimes.values()];

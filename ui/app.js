@@ -583,6 +583,36 @@
   $('tab-settings').addEventListener('click', () => showView('settings'));
   $('tab-monitor').addEventListener('click', () => showView('monitor'));
   $('monitor-refresh').addEventListener('click', () => loadSnapshot());
+  let pruneArmed = false;
+  $('monitor-prune').addEventListener('click', async () => {
+    const button = $('monitor-prune');
+    button.disabled = true;
+    const apply = pruneArmed;
+    $('monitor-updated').textContent = apply ? '正在清理闲置 Key…' : '正在检查闲置 Key…';
+    try {
+      const url = new URL('prune', globalThis.location.href);
+      const response = await bounded(fetch(url.href, {
+        method: 'POST', cache: 'no-store',
+        headers: { accept: 'application/json', 'content-type': 'application/json', 'x-aihub-service-token': serviceToken() },
+        body: JSON.stringify({ apply }),
+      }), '清理超时', 30000);
+      const payload = await response.json().catch(() => null);
+      const data = payload?.data ?? null;
+      if (!response.ok || !data) throw new Error(payload?.error?.message ?? `清理失败（HTTP ${response.status}）`);
+      if (!apply) {
+        const candidates = data.candidates?.length ?? 0;
+        pruneArmed = candidates > 0;
+        $('monitor-updated').textContent = candidates > 0 ? `发现 ${candidates} 把闲置 Key，再点一次确认清理` : '没有闲置 Key';
+      } else {
+        pruneArmed = false;
+        const failed = data.failed?.length ?? 0;
+        $('monitor-updated').textContent = `已清理 ${data.deleted ?? 0} 把闲置 Key${failed ? `，${failed} 把失败` : ''}`;
+        await loadSnapshot();
+      }
+    } catch (error) {
+      $('monitor-updated').textContent = `清理失败：${error?.message ?? error}`;
+    } finally { button.disabled = false; }
+  });
   $('monitor-accounts').addEventListener('click', async event => {
     const button = event.target && typeof event.target.closest === 'function' ? event.target.closest('.account-eye') : null;
     if (!button) return;

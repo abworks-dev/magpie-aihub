@@ -109,6 +109,10 @@ export class Account {
     }
     throw new Error('AIHub key list exceeds supported pagination limit');
   }
+  /** Delete one key this plugin created; the caller decides which ones qualify. */
+  async deleteRemoteKey(id, signal) {
+    return api(`/api/v1/keys/${encodeURIComponent(String(id))}`, { method: 'DELETE', token: this.data.access, fetcher: this.fetcher, signal });
+  }
   async billingInfo(o, signal) {
     if (this.data.mode !== 'managed') return undefined;
     if (this.billing && this.now() - this.billing.at < o.balanceRefreshMs) return this.billing;

@@ -212,6 +212,24 @@ test('a re-imported copy adopts the running listener instead of failing on the p
   await new Promise(resolve => first.close(resolve));
 });
 
+test('a reloaded copy replaces the handler as well as the snapshot source', async () => {
+  const probe = await startService({ port: 0, token: TOKEN, getSnapshot: async () => snapshot() });
+  const port = probe.address().port;
+  await new Promise(resolve => probe.close(resolve));
+  const first = await startService({ port, token: TOKEN, getSnapshot: async () => snapshot() });
+  const reloaded = await import('../src/service.mjs?reload=2');
+  await reloaded.startService({
+    port, token: TOKEN, getSnapshot: async () => snapshot(),
+    prune: async () => ({ candidates: [], deleted: 3, failed: [] }),
+  });
+  const response = await fetch(`http://127.0.0.1:${port}/prune`, {
+    method: 'POST', headers: { ...AUTH, 'content-type': 'application/json' }, body: '{}',
+  });
+  assert.equal(response.status, 200, 'the route the new module adds answers on the old listener');
+  assert.equal((await response.json()).data.deleted, 3);
+  await new Promise(resolve => first.close(resolve));
+});
+
 test('a plugin factory that starts twice reuses its own listener instead of failing', async () => {
   const probe = await startService({ port: 0, token: TOKEN, getSnapshot: async () => snapshot() });
   const port = probe.address().port;
@@ -241,6 +259,22 @@ test('the metrics text exposes only process counters', () => {
   assert.match(body, /aihub_failures_total 1/);
   assert.match(body, /aihub_spend_usd 0\.500000/);
   assert.doesNotMatch(body, /@|groups|keys/i);
+});
+
+test('the cleanup endpoint needs the page token and forwards the dry-run flag', async () => {
+  const seen = [];
+  const prune = async options => {
+    seen.push(options);
+    return { candidates: [{ id: 'k1' }], deleted: 1, failed: [] };
+  };
+  const denied = await call(handler({ prune }), { method: 'POST', path: '/prune', headers: { 'content-type': 'application/json' }, body: '{"apply":true}' });
+  assert.equal(denied.status, 403, 'a request without the page token is refused');
+  const response = await call(handler({ prune }), { method: 'POST', path: '/prune', headers: { ...AUTH, 'content-type': 'application/json', origin: 'null' }, body: '{"apply":true}' });
+  assert.equal(response.status, 200);
+  assert.equal(JSON.parse(response.text).data.deleted, 1);
+  assert.deepEqual(seen, [{ apply: true }]);
+  await call(handler({ prune }), { method: 'POST', path: '/prune', headers: { ...AUTH, 'content-type': 'application/json', origin: 'null' }, body: '{}' });
+  assert.deepEqual(seen.at(-1), { apply: false }, 'a plain POST without the flag stays a dry run');
 });
 
 test('a port the previous process is still releasing is retried instead of failing', async () => {

@@ -163,10 +163,11 @@ export const metricsText = counters => [
   '',
 ].join('\n');
 
-export function serviceHandler({ port, getSnapshot, getIdentities, getMetrics, token = VIEW_TOKEN } = {}) {
+export function serviceHandler({ port, getSnapshot, getIdentities, getMetrics, prune, token = VIEW_TOKEN } = {}) {
   if (typeof getSnapshot !== 'function') throw new TypeError('getSnapshot must be a function');
   if (getIdentities !== undefined && typeof getIdentities !== 'function') throw new TypeError('getIdentities must be a function');
   if (getMetrics !== undefined && typeof getMetrics !== 'function') throw new TypeError('getMetrics must be a function');
+  if (prune !== undefined && typeof prune !== 'function') throw new TypeError('prune must be a function');
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new TypeError('Invalid service port');
   if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(token)) throw new TypeError('Invalid service token');
   const sameToken = provided => {
@@ -191,9 +192,12 @@ export function serviceHandler({ port, getSnapshot, getIdentities, getMetrics, t
       // The page's sandboxed frame sends Origin: null. Unset means a same-origin
       // navigation or a local client; anything else is another site asking.
       if (req.headers.origin !== undefined && req.headers.origin !== 'null') return error(403, 'ORIGIN_REJECTED', 'The service answers only its own page.');
-      if (req.headers['transfer-encoding'] || (req.headers['content-length'] && req.headers['content-length'] !== '0')) return error(400, 'BODY_REJECTED', 'The service takes no request body.');
-      if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') return error(405, 'METHOD_REJECTED', 'The plugin page is read-only.', { Allow: 'GET, HEAD, OPTIONS' });
       const path = req.url.split('?')[0];
+      // The page stays read-only; the one write is the key cleanup, which carries
+      // its own token check and a body the handler parses after the same checks.
+      const pruning = path === '/prune';
+      if (!pruning && (req.headers['transfer-encoding'] || (req.headers['content-length'] && req.headers['content-length'] !== '0'))) return error(400, 'BODY_REJECTED', 'The service takes no request body.');
+      if (!pruning && req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') return error(405, 'METHOD_REJECTED', 'The plugin page is read-only.', { Allow: 'GET, HEAD, OPTIONS' });
       if (path === '/snapshot') {
         const cors = { 'Access-Control-Allow-Origin': 'null', Vary: 'Origin' };
         if (req.method === 'OPTIONS') {
@@ -233,6 +237,22 @@ export function serviceHandler({ port, getSnapshot, getIdentities, getMetrics, t
         } catch {
           return error(503, 'METRICS_UNAVAILABLE', 'The local metrics could not be read. Reload the page, then retry.');
         }
+      }
+      if (pruning) {
+        const cors = { 'Access-Control-Allow-Origin': 'null', Vary: 'Origin' };
+        if (req.method === 'OPTIONS') return send(204, '', undefined, { ...cors, 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': TOKEN_HEADER });
+        if (req.method !== 'POST') return error(405, 'METHOD_REJECTED', 'The cleanup takes only POST.', { ...cors, Allow: 'POST, OPTIONS' });
+        if (!sameToken(req.headers[TOKEN_HEADER])) return error(403, 'TOKEN_REJECTED', 'Reload the page to obtain its snapshot token.', cors);
+        const raw = await new Promise(resolve => {
+          const chunks = []; let size = 0;
+          req.on('data', chunk => { size += chunk.length; if (size > 8192) { req.destroy(); resolve(''); } else chunks.push(chunk); });
+          req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+          req.on('error', () => resolve(''));
+        });
+        let payload = {};
+        try { payload = raw ? JSON.parse(raw) : {}; } catch { payload = {}; }
+        try { return send(200, JSON.stringify({ schemaVersion: 1, data: await prune({ apply: payload?.apply === true }) }), undefined, cors); }
+        catch { return error(503, 'PRUNE_UNAVAILABLE', 'The cleanup could not reach AIHub; retry after reloading the provider.', cors); }
       }
       const asset = ASSETS.get(path);
       if (!asset) return error(404, 'NOT_FOUND', 'The plugin page has no such file.');
@@ -279,29 +299,37 @@ const listenWithRetry = async (server, port, attempts = 20, delay = 500) => {
   }
 };
 
-export async function startService({ port, getSnapshot, getIdentities, getMetrics, token } = {}) {
+export async function startService({ port, getSnapshot, getIdentities, getMetrics, prune, token } = {}) {
   if (port !== 0 && started.has(port)) {
-    started.get(port).setSource(getSnapshot);
-    started.get(port).setIdentities?.(getIdentities);
-    started.get(port).setMetrics?.(getMetrics);
+    // A reloaded module brings new routes as well as new suppliers: rebuild the
+    // handler instead of only swapping the snapshot function.
+    started.get(port).reload({ getSnapshot, getIdentities, getMetrics, prune });
     return started.get(port).server;
   }
-  const live = { getSnapshot, getIdentities, getMetrics };
-  const server = createServer(serviceHandler({
+  const live = { getSnapshot, getIdentities, getMetrics, prune };
+  const build = () => serviceHandler({
     port,
     getSnapshot: () => live.getSnapshot(),
     getIdentities: () => (typeof live.getIdentities === 'function' ? live.getIdentities() : []),
     getMetrics: () => (typeof live.getMetrics === 'function' ? live.getMetrics() : undefined),
+    prune: options => (typeof live.prune === 'function' ? live.prune(options) : Promise.reject(new Error('prune unavailable'))),
     token,
-  }));
+  });
+  const server = createServer(build());
   await listenWithRetry(server, port);
   server.unref();
   if (port !== 0) {
     started.set(port, {
       server,
+      reload: next => {
+        Object.assign(live, next);
+        server.removeAllListeners('request');
+        server.on('request', build());
+      },
       setSource: next => { live.getSnapshot = next; },
       setIdentities: next => { live.getIdentities = next; },
       setMetrics: next => { live.getMetrics = next; },
+      setPrune: next => { live.prune = next; },
     });
     server.once('close', () => started.delete(port));
   }

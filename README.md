@@ -2,7 +2,7 @@
 
 面向 **aihub.top 普通消费者** 的 Magpie Provider 插件。用自己的账户或分组 Key，在 Magpie 中提供一个 `aihub-auto` 上游入口，按倍率和延迟选组、保留会话线路、在首次响应前有限重试。
 
-**版本：v0.4.1（预发布）。** 当前实现覆盖 `openai`、`deepseek`、`zhipu`、`kimi`、`grok`、`gemini` 六个平台；非 OpenAI 模型使用 `platform::model` 命名空间，仅在**同平台、同模型**的分组间 failover。Gemini 可显式选择 Responses 或原生 Gemini 协议，其他平台支持 Responses / Chat Completions。外部平台接口依据公开文档与公开代码核对，**不代表六平台真实调用均已实测**。v0.3.0 新增账户余额卡、每账户 Key 上限与余额阈值暂停建 Key；v0.3.1 在页面令牌过期时自动重载一次，并把服务端拒绝快照的 `error.code` 显示在监控页，便于区分令牌过期与入口代理改写。
+**版本：v0.4.2（预发布）。** 当前实现覆盖 `openai`、`deepseek`、`zhipu`、`kimi`、`grok`、`gemini` 六个平台；非 OpenAI 模型使用 `platform::model` 命名空间，仅在**同平台、同模型**的分组间 failover。Gemini 可显式选择 Responses 或原生 Gemini 协议，其他平台支持 Responses / Chat Completions。外部平台接口依据公开文档与公开代码核对，**不代表六平台真实调用均已实测**。v0.3.0 新增账户余额卡、每账户 Key 上限与余额阈值暂停建 Key；v0.3.1 在页面令牌过期时自动重载一次，并把服务端拒绝快照的 `error.code` 显示在监控页，便于区分令牌过期与入口代理改写。
 
 已通过 192 项本地测试，并在隔离的官方 Magpie 0.1.3250 `magpie web` 实例中经真实浏览器打开：页面经插件服务代理加载、`magpie.ready` 连通、监控标签跳转到服务页并在沙箱 iframe 内读到 `/snapshot`。余额/消耗接口来自已登录 AIHub 页面的实际响应样本，但页面余额卡与 Key 上限保护只在合成快照和本地 Edge 渲染中验证。官方 Magpie 0.1.3250 隔离检查涵盖插件加载、合成凭据登录、六平台 8 个模型与三种 SDK 注册。真实生产实例联调、真实 AIHub 账户与计费推理仍未验证。独立 MIT 实现，不复制许可不明项目代码。图标取自 [AIHub 官方站点](https://aihub.top/) 公开页面的 PNG favicon，内嵌到元数据与页面；品牌图像权利归原站点。
 
@@ -137,6 +137,12 @@ Key 准备失败返回稳定的 `error.code` 和脱敏信息，停止本次请�
 ## 出网代理
 
 Magpie 把宿主代理以 `MAGPIE_HTTPS_PROXY` / `MAGPIE_HTTP_PROXY` / `MAGPIE_ALL_PROXY`（及对应小写形式和 `MAGPIE_NO_PROXY`）传给插件进程，普通 `HTTPS_PROXY` 并不保证存在。Bun 的 `fetch` 不会自己读取环境变量，所以插件的每个出站请求都显式带上 `proxy`：取值顺序 `MAGPIE_HTTPS_PROXY → HTTPS_PROXY → MAGPIE_ALL_PROXY → ALL_PROXY`，命中 `NO_PROXY` 时直连；未配置代理时行为不变（直连）。这解决的是容器直连 `aihub.top` 被投毒解析、连接被重置这类环境问题，不改变任何接口语义。
+
+## 清理闲置 Key
+
+监控页的「清理闲置 Key」只处理本插件创建的专用 Key：名字以 `magpie-aihub-` 开头，且当前没有任何路由分组还在用它。账户上你自己建的 Key、以及仍有分组在用的 Key 都不会被删。
+
+它调用页面服务的 `POST /prune`，需要页面令牌；请求体 `{"apply":true}` 才真正删除，不带该字段时是试运行（只返回候选清单）。AIHub 若不具备删除接口，失败项会列在返回的 `failed` 里，不会静默跳过。
 
 ## 开发与验证
 
