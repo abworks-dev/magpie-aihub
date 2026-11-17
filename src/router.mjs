@@ -150,9 +150,10 @@ export class Router {
     const cap = this.capFor(platform);
     const top = [...tally].sort((a, b) => b[1] - a[1]).slice(0, 3)
       .map(([why, n]) => why === 'over the multiplier cap' && cheapest !== null
-        ? `${why} ×${n} (cap ×${cap}, cheapest rejected ×${Number(cheapest).toFixed(3)})`
+        ? `${why} ×${n} (cheapest rejected ×${Number(cheapest).toFixed(3)})`
         : `${why} ×${n}`).join(', ');
-    return `No eligible AIHub route remains within the configured multiplier and attempt limits (${rows.length} groups: ${top || 'all filtered by platform'})`;
+    const unmatched = rows.filter(c => (!c.models || c.models.some(id => bareModelId(id) === model))).length;
+    return `No eligible AIHub route remains within the configured multiplier and attempt limits (platform ${platform}, cap ×${Number(cap).toFixed(3)}, ${rows.length} groups, ${unmatched} list this model: ${top || 'all filtered by platform'})`;
   }
   eligible(c, model, platform = c.platform ?? 'openai', { requirePrice = this.o.strategy === 'price' } = {}) {
     return (c.platform ?? 'openai') === platform && this.eligibleGroup(c) && (!requirePrice || this.priceKnown(c)) &&
