@@ -133,6 +133,8 @@ npm pack --dry-run
 
 验收顺序：先导入两把同平台同模型、已限额的测试 Key → 核对命名空间与协议 → 少量真实对话 → 检查会话保持和失败场景 → 再考虑账户自动建 Key。真实模型测试会产生费用；local mock 与 Edge 合成代理不证明六平台真实接口、生产权限、费用或可用性。opc-agent 生产私有路径已被拒绝，不能通过其他路径或身份绕过。
 
+发布约定：打**轻量标签**（`git tag v0.2.3`，不加 `-a`/`-m`）。Magpie 的 git 插件更新检查把 bun 记录的 ref 与仓库解析出的提交比较；注解标签会被 bun 记成标签对象 sha、被 Magpie 剥成提交，两者永不相等，插件页会一直显示“有新版本”而更新无效（[yetone/magpie#6952](https://github.com/yetone/magpie/issues/6952)）。已按 `#vX.Y.Z` 安装的用户可用 `#<40 位提交>` 重新安装来消除提示。
+
 [架构与边界](documentation/architecture.md) · [认证/请求流程](documentation/flows.md) · [权限](documentation/permissions.md) · [配置与秘密](documentation/variables.md) · [自动化](documentation/automation.md) · [验证记录](documentation/tests.md)
 
 ## 来源与许可
