@@ -369,6 +369,39 @@ test('the eviction policy stays off unless it is switched on', async () => {
   assert.equal(asked, 0);
 });
 
+test('a stale model card on one platform hands the bare id to another platform', async () => {
+  const rows = [
+    candidate(1, { platform: 'openai', models: ['shared-model'], multiplier: 0.05 }),
+    candidate(2, { platform: 'deepseek', models: ['shared-model'], multiplier: 0.5 }),
+  ];
+  const { router, calls } = fixture(rows, { bareModelIds: true, platformCaps: { openai: 0.16, deepseek: 2 } }, {
+    advertised: ['shared-model'],
+    respond: async (_url, init) => groupOf(init) === 1
+      ? new Response(JSON.stringify({ error: { code: 404, message: 'Model "shared-model" is not available for this group' } }), { status: 404 })
+      : new Response('ok'),
+  });
+  const { response } = await consume(router, request({ model: 'shared-model' }, { 'x-aihub-auto-platform': 'openai' }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls.map(c => c.group), [1, 2], 'the other platform answers for the same bare id');
+});
+
+test('a group-level miss drops that group cached model list', async () => {
+  const rows = [
+    candidate(1, { platform: 'openai', models: ['shared-model'], multiplier: 0.05 }),
+    candidate(2, { platform: 'deepseek', models: ['shared-model'], multiplier: 0.5 }),
+  ];
+  const { router, account } = fixture(rows, { bareModelIds: true, platformCaps: { openai: 0.16, deepseek: 2 } }, {
+    advertised: ['shared-model'],
+    respond: async (_url, init) => groupOf(init) === 1
+      ? new Response(JSON.stringify({ error: { code: 404, message: 'Model "shared-model" is not available for this group' } }), { status: 404 })
+      : new Response('ok'),
+  });
+  const forgotten = [];
+  account.forgetModels = groupId => forgotten.push(groupId);
+  await consume(router, request({ model: 'shared-model' }, { 'x-aihub-auto-platform': 'openai' }));
+  assert.deepEqual(forgotten, [1]);
+});
+
 test('a group that says the model is unavailable for it hands over to the next group', async () => {
   const body = JSON.stringify({ error: { code: 404, message: `Model "${model}" is not available for this group`, status: 'NOT_FOUND' } });
   const { router, calls } = fixture(undefined, {}, { respond: async (url, init) => groupOf(init) === 1 ? new Response(body, { status: 404 }) : new Response('ok') });

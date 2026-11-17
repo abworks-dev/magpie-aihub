@@ -246,6 +246,10 @@ export class Account {
       return key;
     }, signal);
   }
+  /** Forget a group's cached model list: a group can stop serving a model. */
+  forgetModels(groupId) {
+    this.models.delete(groupId);
+  }
   async modelIds(key, o, signal) {
     if (key.models) return key.models;
     const cached = this.models.get(key.groupId);

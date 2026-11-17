@@ -373,6 +373,14 @@ export class Router {
       // The pool size bounds how many candidates one request keeps looking at;
       // it no longer doubles as a key budget.
       candidates = candidates.slice(0, Math.max(1, this.o.poolSize));
+      // A group's model card can outlive the model it names. Keep the preferred
+      // platform first, then let the other platforms answer for the same bare id
+      // instead of reporting the first stale 404.
+      if (inferable) {
+        const taken = new Set(candidates.map(c => c.groupId));
+        const spare = catalogue.filter(c => !taken.has(c.groupId) && this.eligible(c, model, c.platform ?? 'openai', { requirePrice: false }));
+        if (spare.length) candidates = [...candidates, ...spare.slice(0, Math.max(1, this.o.poolSize))];
+      }
       const poolBlocked = beforePool.length - candidates.length;
       let attempts = 0, keyMismatch = 0, keyBlocked = 0, firstKeyFailure = null, groupMiss = null;
       let payload = {};
@@ -454,6 +462,7 @@ export class Router {
             // caller's mistake: remember it briefly and let the next group answer.
             if (response.status === 404 && /not available for this group/i.test(detail)) {
               this.rejected.set(`${candidate.groupId}:${model}`, this.now() + this.o.cooldownMs);
+              this.account.forgetModels?.(candidate.groupId);
               groupMiss = { message: `AIHub rejected the request with HTTP ${response.status}${detail} (POST ${url.pathname} via group ${candidate.groupId})`, status: response.status };
               continue;
             }
