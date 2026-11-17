@@ -90,8 +90,13 @@ export function snapshotView(raw) {
         return {
           groupId: id(group?.groupId), name: safeString(group?.name), platform: code(group?.platform),
           multiplier: number(group?.multiplier), available: bool(group?.available), passed: bool(group?.passed),
-          latency: number(group?.latency), detection: code(group?.detection),
-          metrics: Object.fromEntries(['successRate', 'cacheHitRate', 'tps', 'realPrice', 'samples', 'observedSeconds'].map(key => [key, number(group?.metrics?.[key])])),
+          latency: number(group?.latency), detection: code(group?.detection), detectionAt: timestamp(group?.detectionAt),
+          badges: list(group?.badges, 6).map(badge => safeString(badge, 40)).filter(Boolean),
+          cards: list(group?.cards, 60).map(card => ({
+            model: safeString(card?.model, 160), alias: safeString(card?.alias, 80),
+            price: number(card?.price), health: code(card?.health), sampleCount: number(card?.sampleCount),
+          })).filter(card => card.model),
+          metrics: Object.fromEntries(['successRate', 'successRate1h', 'cacheHitRate', 'tps', 'realPrice', 'samples', 'observedSeconds', 'totalMs', 'pingMs', 'reputation'].map(key => [key, number(group?.metrics?.[key])])),
           models, eligible: bool(group?.eligible), reasons: list(group?.reasons, 16).map(reason => safeString(reason, 160)).filter(Boolean),
           hasKey: bool(group?.hasKey), selectedCount: number(group?.selectedCount),
           cooldownUntil: timestamp(group?.cooldownUntil), lastUsedAt: timestamp(group?.lastUsedAt),

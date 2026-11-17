@@ -152,7 +152,7 @@ export class Router {
       .map(([why, n]) => why === 'over the multiplier cap' && cheapest !== null
         ? `${why} ×${n} (cheapest rejected ×${Number(cheapest).toFixed(3)})`
         : `${why} ×${n}`).join(', ');
-    const unmatched = rows.filter(c => (!c.models || c.models.some(id => bareModelId(id) === model))).length;
+    const unmatched = rows.filter(c => c.models?.some(id => bareModelId(id) === model)).length;
     return `No eligible AIHub route remains within the configured multiplier and attempt limits (platform ${platform}, cap ×${Number(cap).toFixed(3)}, ${rows.length} groups, ${unmatched} list this model: ${top || 'all filtered by platform'})`;
   }
   eligible(c, model, platform = c.platform ?? 'openai', { requirePrice = this.o.strategy === 'price' } = {}) {
@@ -261,10 +261,15 @@ export class Router {
       // Try priced groups first, then unpriced ones: a platform whose groups have no
       // price window yet must not disappear just because the strategy prefers prices.
       if (!candidates.length) {
+        // Only a group that explicitly lists the model counts as evidence for a
+        // platform: a group without a model list must not attract another
+        // platform's model.
         for (const requirePrice of [true, false]) {
           for (const platformId of this.o.platforms) {
             if (platformId === platform) continue;
-            const rows = catalogue.filter(c => this.eligible(c, model, platformId, { requirePrice }));
+            const rows = catalogue.filter(c => (c.platform ?? 'openai') === platformId &&
+              (c.models?.some(id => bareModelId(id) === model) ?? false) &&
+              this.eligible(c, model, platformId, { requirePrice }));
             if (!rows.length) continue;
             platform = platformId;
             candidates = rows.sort((a, b) => this.score(a) - this.score(b) || a.groupId - b.groupId);

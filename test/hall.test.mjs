@@ -49,3 +49,15 @@ test('the hall window carries its sample count and detection state', () => {
   assert.equal(entry.detection, 'passed');
   assert.equal(entry.latency, 1200);
 });
+
+test('the hall exposes the 1h success rate, the reputation and the model cards', () => {
+  const entry = normalizeHall([{ group_id: 31, platform: 'openai', rate_multiplier: 0.06,
+    success_rates: { '1h': 0.94, '6h': 0.91 }, reputation: 4.15,
+    model_cards: [{ model: 'gpt-5.6', alias: 'A', price: 0.07, health: 'ok', sample_count: 21 }, { model: 'bad id!', health: 'failed' }] }]).get(31);
+  assert.equal(entry.metrics.successRate1h, 0.94);
+  assert.equal(entry.metrics.successRate, 0.91);
+  assert.equal(entry.metrics.reputation, 4.15);
+  assert.equal(entry.cards.length, 1);
+  assert.equal(entry.cards[0].price, 0.07);
+  assert.equal(entry.cards[0].sampleCount, 21);
+});

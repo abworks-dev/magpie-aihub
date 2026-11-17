@@ -108,12 +108,25 @@ export function normalizeHall(data) {
       name: typeof r.name === 'string' ? r.name : undefined,
       metrics: {
         successRate: numeric(r.success_rates?.['6h'] ?? r.probe_success_rate_6h) ?? null,
+        successRate1h: numeric(r.success_rates?.['1h'] ?? r.probe_success_rate_1h) ?? null,
         tps: numeric(r.summary_tps ?? r.output_tps) ?? null,
+        totalMs: numeric(r.avg_total_ms) ?? null,
+        pingMs: numeric(r.avg_ping_ms) ?? null,
+        reputation: numeric(r.reputation) ?? null,
         cacheHitRate: fresh ? numeric(range.cache_hit_rate) ?? null : null,
         realPrice: fresh ? rangePrice(range) : null,
         samples: numeric(range.usage_records) ?? null,
         observedSeconds: numeric(range.observed_seconds) ?? null,
       },
+      detectionAt: numeric(detection.detected_at) ?? null,
+      cards: Array.isArray(r.model_cards) ? r.model_cards.filter(m => validModelId(m?.model)).slice(0, 60).map(m => ({
+        model: m.model,
+        alias: typeof m.alias === 'string' ? m.alias : undefined,
+        price: numeric(m.price) ?? null,
+        health: typeof m.health === 'string' ? m.health : null,
+        sampleCount: numeric(m.sample_count) ?? null,
+      })) : [],
+      badges: Array.isArray(r.badges) ? r.badges.filter(b => typeof b === 'string').slice(0, 6) : [],
       detection: typeof detection.status === 'string' ? detection.status
         : typeof stage?.state === 'string' ? stage.state
           : typeof stage?.published_state === 'string' ? stage.published_state : null,
