@@ -74,9 +74,9 @@ child.on('error', () => finish({ error: 'browser-start-failed' }));
 let timeout;
 try {
   const report = await Promise.race([result, new Promise(resolve => { timeout = setTimeout(() => resolve({ error: 'timeout' }), 25000); })]);
-  const passed = report.rows === 1 && report.filters === 2 && report.kpis === 4 && report.error === false
+  const passed = report.rows === 1 && report.filters === 2 && report.kpis === 5 && report.error === false
     && report.monitorHidden === false && report.settingsHidden === true
-    && reads === 1 && report.text.includes('Fixture group') && report.text.includes('99.0%')
+    && reads === 1 && report.text.includes('Fixture group') && report.text.includes('99.0%') && report.text.includes('今日花费')
     && report.text.includes('exact-fixture') && !report.text.includes('PRIVATE@');
   console.log(JSON.stringify({ passed, rows: report.rows, filters: report.filters, kpis: report.kpis, reads, error: report.error,
     text: passed ? undefined : report.text, failure: report.error === 'timeout' ? 'timeout' : undefined }));
