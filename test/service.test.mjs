@@ -198,6 +198,19 @@ test('the service binds once on loopback and rejects a second listener on the sa
   await new Promise(resolve => first.close(resolve));
 });
 
+test('a re-imported copy adopts the running listener instead of failing on the port', async () => {
+  const probe = await startService({ port: 0, token: TOKEN, getSnapshot: async () => snapshot() });
+  const port = probe.address().port;
+  await new Promise(resolve => probe.close(resolve));
+  const first = await startService({ port, token: TOKEN, getSnapshot: async () => snapshot() });
+  const reloaded = await import('../src/service.mjs?reload=1');
+  const adopted = await reloaded.startService({ port, token: TOKEN, getSnapshot: async () => snapshot() });
+  assert.equal(adopted, first, 'the new copy reuses the listener from the previous copy');
+  const response = await fetch(`http://127.0.0.1:${port}/snapshot`, { headers: AUTH });
+  assert.equal(response.status, 200);
+  await new Promise(resolve => first.close(resolve));
+});
+
 test('a plugin factory that starts twice reuses its own listener instead of failing', async () => {
   const probe = await startService({ port: 0, token: TOKEN, getSnapshot: async () => snapshot() });
   const port = probe.address().port;

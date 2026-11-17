@@ -27,7 +27,12 @@ const TOKEN_PLACEHOLDER = '__AIHUB_SERVICE_TOKEN__';
 const TOKEN_HEADER = 'x-aihub-service-token';
 const MAX_BYTES = 1024 * 1024;
 // One listener per port in this process: repeated plugin factories reuse it.
-const started = new Map();
+// The host may load this module more than once (plugin update, re-import), and
+// the listener created by the previous copy keeps holding the port. Keep the
+// registry on the process object so a fresh copy adopts the running listener and
+// swaps in its own snapshot supplier instead of failing with EADDRINUSE.
+const REGISTRY = Symbol.for('aihub-auto.page-service');
+const started = globalThis[REGISTRY] ?? (globalThis[REGISTRY] = new Map());
 const list = (value, limit) => Array.isArray(value) ? value.slice(0, limit) : [];
 const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const bool = value => typeof value === 'boolean' ? value : null;
@@ -216,6 +221,7 @@ export function serviceHandler({ port, getSnapshot, getIdentities, token = VIEW_
 export async function startService({ port, getSnapshot, getIdentities, token } = {}) {
   if (port !== 0 && started.has(port)) {
     started.get(port).setSource(getSnapshot);
+    started.get(port).setIdentities?.(getIdentities);
     return started.get(port).server;
   }
   const live = { getSnapshot, getIdentities };
@@ -233,7 +239,11 @@ export async function startService({ port, getSnapshot, getIdentities, token } =
   });
   server.unref();
   if (port !== 0) {
-    started.set(port, { server, setSource: next => { live.getSnapshot = next; } });
+    started.set(port, {
+      server,
+      setSource: next => { live.getSnapshot = next; },
+      setIdentities: next => { live.getIdentities = next; },
+    });
     server.once('close', () => started.delete(port));
   }
   return server;
