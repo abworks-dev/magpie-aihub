@@ -1,6 +1,6 @@
 # 配置与凭据
 
-插件无环境变量配置入口，无外部依赖；由 Magpie options 和 auth API 配置。固定供应商 aihub-auto、origin https://aihub.top；Responses / Chat / models base 为 /v1，原生 Gemini 为 /v1beta。见 [配置](../src/config.mjs)、[平台](../src/platforms.mjs)、[清单](../package.json)。v0.2.2 为预发布版本，真实生产联调未验证；六平台接口仅按公开代码核对，现有验证为 local mock 与 Edge 合成代理。
+插件无环境变量配置入口，无外部依赖；由 Magpie options 和 auth API 配置。固定供应商 aihub-auto、origin https://aihub.top；Responses / Chat / models base 为 /v1，原生 Gemini 为 /v1beta。见 [配置](../src/config.mjs)、[平台](../src/platforms.mjs)、[清单](../package.json)。v0.3.0 为预发布版本，真实生产联调未验证；六平台接口仅按公开代码核对，现有验证为 local mock 与 Edge 合成代理。
 
 ## 非敏感 options
 
@@ -17,6 +17,8 @@
 | allowedGroups | []；正安全整数数组 | UI + Router | 空数组不额外限组，仍受其他筛选 |
 | requirePassed | false；boolean | UI + Router | 要求大厅 passed=true；manual 缺该证据，开启会排除全部手工组 |
 | autoCreateKeys | false；boolean | UI + Account | 主动开启才可 POST 创建；关闭不撤销已有 Key |
+| maxKeysPerAccount | 8；整数 1–32 | UI + Account | 插件专用 Key 总数上限；达到后 `key_cap_reached`，不删除已有 Key |
+| minBalance | 0；0–100000 有限数 | UI + Account | >0 时余额低于阈值暂停新建 Key（`balance_too_low`）；读取失败不推断余额、不阻塞已有 Key |
 | defaultApi | responses；responses / chat | UI + 入口 | 宿主默认适配协议，不转换请求语义；Gemini 不支持 chat，原生须逐模型选择 |
 | models | []；最多 200 项且公共 ID 唯一 | UI + 入口 | 字符串或 {id,platform?,api?,context?,output?}；原始 ID 1–160 个允许字符；非 OpenAI namespace 或显式 platform，二者须一致；api 为 responses / chat / gemini，Gemini 仅 responses / gemini，其余 responses / chat；context / output 正安全整数。显式配置优先，空列表发现，不证明推理可用 |
 | monitorPort | 19871；整数 1024–65535 | UI + 入口 / page.service | 页面服务与只读监控的回环端口；仅默认候选，尚未生产分配或确认可用；需核对宿主端口与服务桥接 |

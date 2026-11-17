@@ -2,7 +2,13 @@
 
 ## 当前证据
 
-2026-11-17 02:55–02:57 +08，本地 Windows / Node 24.22.1 对 v0.2.2 执行 `node --test`：185 项测试通过，失败、取消、跳过均为 0（含嵌套计数）。路由与账号测试使用模拟 fetch、模拟宿主和内存流；页面服务测试启动真实回环 HTTP 服务并提供合成快照。不含真实凭据或付费模型调用。`npm run check` 对入口、服务端模块与 UI 脚本逐个做语法检查，exit 0。`npm pack --dry-run` 包含 23 个预期文件、101.3 kB，未包含测试凭据或隔离宿主目录。
+2026-11-17 19:20 +08，本地 Windows / Node 24.22.1 对 v0.3.0 执行 `node --test`：189 项测试通过，失败、取消、跳过均为 0（含嵌套计数）。路由与账号测试使用模拟 fetch、模拟宿主和内存流；页面服务测试启动真实回环 HTTP 服务并提供合成快照。不含真实凭据或付费模型调用。`npm run check` 对入口、服务端模块与 UI 脚本逐个做语法检查，exit 0。`npm pack --dry-run` 包含 24 个预期文件、107.6 kB，未包含测试凭据或隔离宿主目录。
+
+## v0.3.0 余额卡与 Key 保护
+
+2026-11-17 18:40–19:20 +08，余额/消耗/平台限额接口的字段形状来自已登录 AIHub 页面的实际响应（`/api/v1/auth/me`、`/api/v1/usage/stats`、`/api/v1/user/platform-quotas`，用 CDP 在页面内挂 fetch 钩子采集），但**没有在生产 Magpie 中运行本插件读取真实余额**。服务端行为由合成 fetch 断言：达到 `maxKeysPerAccount` 时在 POST 前返回 `key_cap_reached`；余额低于 `minBalance` 时返回 `balance_too_low` 且不发建 Key 请求；`/usage/stats`、`/platform-quotas` 返回 404 时保留 `auth/me` 已读值、缺失字段为 null，第二次读取命中缓存不重复请求；`snapshotView` 对 billing 平台行截断为 12、Key 事件保留、`billing_unavailable` 原样透出安全 code。UI 侧（余额卡、今日/本月、平台限额、Key 事件）只经 Edge 合成快照渲染检查，未接真实账户。
+
+新增/改动测试：`test/account.test.mjs` 三例（上限、余额门限、计费容错与缓存）、`test/telemetry.test.mjs` 一例（billing/keyEvents/keyState 投影）、`test/service.test.mjs` 断言 billing 截断与错误 code；`src/billing.mjs` 加入静态检查。不含推理、建 Key 或计费调用。
 
 ## v0.2.2 真实宿主页面服务联调与主题
 

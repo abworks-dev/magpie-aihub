@@ -9,6 +9,9 @@ export async function monitorSnapshot(runtimes, options, now = Date.now) {
     try { await account.catalogue(options, AbortSignal.timeout(15000)); }
     catch (error) { errorCode = error?.status === 401 ? 'account_sign_in_required' : error?.status === 403 ? 'catalogue_access_denied' : 'catalogue_unavailable'; }
     router.prune();
+    let billing;
+    try { billing = await account.billingInfo(options, AbortSignal.timeout(15000)); }
+    catch { billing = undefined; }
     const rows = account.directoryRows ?? account.snapshot?.rows ?? [];
     const groups = rows.slice(0, 500).map(c => {
       const reasons = [];
@@ -40,7 +43,23 @@ export async function monitorSnapshot(runtimes, options, now = Date.now) {
       sourceUpdatedAt: finite(account.snapshot?.at), stale: Boolean(errorCode) || account.remoteStale === true,
       ...(errorCode ? { errorCode } : {}), groups,
       routes: (router.lastRoutes ?? []).slice(-100).map(r => ({ platform: text(r.platform), model: text(r.model), groupId: r.groupId, at: finite(r.at), outcome: text(r.outcome) })),
-      keyState: { ready: account.data.keys.length, pending: account.data.pending ? 1 : 0, autoCreateKeys: options.autoCreateKeys },
+      keyState: { ready: account.data.keys.length, pending: account.data.pending ? 1 : 0, autoCreateKeys: options.autoCreateKeys, maxKeysPerAccount: options.maxKeysPerAccount, minBalance: options.minBalance },
+      billing: billing ? {
+        at: finite(billing.at), balance: finite(billing.balance), frozen: finite(billing.frozen), recharged: finite(billing.recharged),
+        notify: billing.notify ? { enabled: billing.notify.enabled, threshold: finite(billing.notify.threshold), kind: text(billing.notify.kind) } : null,
+        usage: billing.usage ? {
+          requests: finite(billing.usage.requests), tokens: finite(billing.usage.tokens),
+          cost: finite(billing.usage.cost), actualCost: finite(billing.usage.actualCost),
+        } : null,
+        platforms: (billing.platforms ?? []).map(p => ({
+          platform: text(p.platform),
+          dailyLimit: finite(p.dailyLimit), dailyUsage: finite(p.dailyUsage),
+          weeklyLimit: finite(p.weeklyLimit), weeklyUsage: finite(p.weeklyUsage),
+          monthlyLimit: finite(p.monthlyLimit), monthlyUsage: finite(p.monthlyUsage),
+        })),
+      } : null,
+      billingError: account.billingError ?? null,
+      keyEvents: Array.isArray(account.audit) ? account.audit.slice(-8) : [],
     });
   }
   return { schemaVersion: 1, generatedAt: now(), accounts };

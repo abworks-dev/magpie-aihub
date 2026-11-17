@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { waitFor } from './async.mjs';
 import { api, list, tokenFields, normalizeHall, groupInventory, ApiError } from './api.mjs';
+import { loadBilling } from './billing.mjs';
 import { BASE, PROVIDER } from './config.mjs';
 import { KeyError } from './errors.mjs';
 
@@ -17,6 +18,9 @@ export class Account {
     this.snapshot = undefined;
     this.remoteStale = false;
     this.models = new Map();
+    this.billing = undefined;
+    this.billingError = undefined;
+    this.audit = [];
   }
   mutate(fn, signal) {
     const p = this.queue.then(() => { signal?.throwIfAborted(); return fn(); });
@@ -92,12 +96,43 @@ export class Account {
     }
     throw new Error('AIHub key list exceeds supported pagination limit');
   }
+  async billingInfo(o, signal) {
+    if (this.data.mode !== 'managed') return undefined;
+    if (this.billing && this.now() - this.billing.at < o.balanceRefreshMs) return this.billing;
+    if (!this.billingRefresh) {
+      this.billingRefresh = loadBilling(this, signal)
+        .then(info => { this.billing = info; this.billingError = undefined; return info; })
+        .catch(error => {
+          this.billingError = error?.status === 401 ? 'billing_sign_in_required'
+            : error?.status === 403 ? 'billing_access_denied' : 'billing_unavailable';
+          if (this.billing && this.now() - this.billing.at <= o.maxStaleMs) return this.billing;
+          return undefined;
+        })
+        .finally(() => { this.billingRefresh = undefined; });
+    }
+    return waitFor(this.billingRefresh, signal);
+  }
+  note(action, groupId, code) {
+    this.audit.push({ at: this.now(), action, groupId, code });
+    if (this.audit.length > 50) this.audit.splice(0, this.audit.length - 50);
+  }
   async keyFor(candidate, o, signal) {
     return this.mutate(async () => {
       const existing = this.data.keys.find(k => k.groupId === candidate.groupId);
       if (existing) { if (this.dirty) await this.save(); return existing; }
       if (this.data.mode !== 'managed') throw new KeyError('key_not_imported', '此分组没有导入 Key，请在插件连接中导入对应分组 Key。');
       if (this.data.keys.length >= o.poolSize) throw new KeyError('key_pool_full', '专用 Key 池已满，请增大 poolSize 或使用已有分组。');
+      if (this.data.keys.length >= o.maxKeysPerAccount) {
+        this.note('blocked', candidate.groupId, 'key_cap_reached');
+        throw new KeyError('key_cap_reached', `专用 Key 数量已达上限 ${o.maxKeysPerAccount}，请增大 maxKeysPerAccount 或复用已有分组。`);
+      }
+      if (o.minBalance > 0) {
+        const billing = await this.billingInfo(o, signal);
+        if (typeof billing?.balance === 'number' && billing.balance < o.minBalance) {
+          this.note('blocked', candidate.groupId, 'balance_too_low');
+          throw new KeyError('balance_too_low', `账户余额低于设定阈值 ${o.minBalance}，已停止创建新 Key。`);
+        }
+      }
       const name = `magpie-aihub-${this.data.instanceId.slice(0, 12)}-g${candidate.groupId}`;
       const pending = this.data.pending;
       if (pending && pending.groupId !== candidate.groupId) throw new KeyError('key_creation_pending', '此前创建 Key 的结果尚未确认，请先在 AIHub 检查对应记录。');
@@ -110,6 +145,7 @@ export class Account {
       };
       if (this.data.refresh && this.data.expires && this.data.expires <= this.now() + 30000) await this.renew(signal);
       let remote = await recover();
+      if (remote) this.note('recovered', candidate.groupId, 'recovered');
       if (!remote && pending) throw new KeyError('key_creation_pending', '此前创建 Key 的结果未知，请在 AIHub 检查；插件不会重复创建。');
       if (!remote) {
         if (!o.autoCreateKeys) throw new KeyError('key_creation_disabled', '此分组尚无专用 Key。请开启自动创建分组 Key，或手工导入该分组 Key。');
@@ -124,6 +160,7 @@ export class Account {
       }
       if (!remote || typeof remote.key !== 'string' || !remote.key || !Number.isSafeInteger(Number(remote.id)) || Number(remote.group_id) !== candidate.groupId || (remote.name && remote.name !== name))
         throw new KeyError('key_creation_incomplete', 'AIHub 未返回完整的专用 Key，请检查待确认的创建记录。');
+      this.note('created', candidate.groupId, 'created');
       const key = { groupId: candidate.groupId, platform: candidate.platform ?? 'openai', key: remote.key, remoteId: Number(remote.id), name, owned: true };
       this.data.keys.push(key);
       delete this.data.pending;

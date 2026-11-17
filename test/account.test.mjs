@@ -343,3 +343,57 @@ test('model catalogue uses only the group credential and rejects unsafe redirect
   });
   assert.equal(calls.length, 1);
 });
+
+test('the per-account Key cap blocks a new group before any key POST', async () => {
+  let posts = 0;
+  const account = new Account(managed({ keys: [{ groupId: 7, platform: 'openai', key: 'existing', remoteId: 1, name: 'existing', owned: true }] }), {
+    save: async () => {},
+    fetcher: async (_url, init) => { if (init.method === 'POST') posts++; return json([]); },
+  });
+  await assert.rejects(account.keyFor(group, options({ maxKeysPerAccount: 1 })), error => error.code === 'key_cap_reached');
+  assert.equal(posts, 0);
+  assert.equal(account.audit.at(-1).action, 'blocked');
+  assert.equal(account.audit.at(-1).code, 'key_cap_reached');
+});
+
+test('a balance below the threshold stops new keys and still exposes the billing snapshot', async () => {
+  let posts = 0;
+  const calls = [];
+  const account = new Account(managed(), {
+    save: async () => {},
+    fetcher: async (url, init) => {
+      const path = pathOf(url); calls.push(path);
+      if (path === '/api/v1/auth/me') return json({ balance: 1.25, frozen_balance: 0, total_recharged: 10 });
+      if (path === '/api/v1/usage/stats') return json({ total_requests: 3, total_tokens: 900, total_cost: 0.5, total_actual_cost: 0.4 });
+      if (path === '/api/v1/user/platform-quotas') return json({ platform_quotas: [{ platform: 'openai', daily_limit_usd: null, daily_usage_usd: 0.2, monthly_limit_usd: 5, monthly_usage_usd: 1.1 }] });
+      if (init.method === 'POST') posts++;
+      return json([]);
+    },
+  });
+  await assert.rejects(account.keyFor(group, options({ minBalance: 5 })), error => error.code === 'balance_too_low');
+  assert.equal(posts, 0);
+  assert.equal(account.audit.at(-1).code, 'balance_too_low');
+  const billing = await account.billingInfo(options({ minBalance: 5 }));
+  assert.equal(billing.balance, 1.25);
+  assert.equal(billing.usage.requests, 3);
+  assert.equal(billing.platforms[0].monthlyLimit, 5);
+  assert.ok(calls.includes('/api/v1/auth/me'));
+});
+
+test('billing keeps nulls when usage endpoints are unavailable and caches the refresh', async () => {
+  let reads = 0;
+  const account = new Account(managed(), {
+    save: async () => {},
+    fetcher: async url => {
+      const path = pathOf(url);
+      if (path === '/api/v1/auth/me') { reads++; return json({ balance: 3, frozen_balance: 0 }); }
+      return json({ message: 'unavailable' }, 404);
+    },
+  });
+  const billing = await account.billingInfo(options());
+  assert.equal(billing.balance, 3);
+  assert.equal(billing.usage, null);
+  assert.deepEqual(billing.platforms, []);
+  await account.billingInfo(options());
+  assert.equal(reads, 1);
+});

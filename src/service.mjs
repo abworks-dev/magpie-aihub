@@ -79,9 +79,32 @@ export function snapshotView(raw) {
         platform: code(route?.platform), model: safeString(route?.model), groupId: id(route?.groupId),
         at: timestamp(route?.at), outcome: code(route?.outcome),
       })),
+      billing: account?.billing ? {
+        at: timestamp(account.billing.at),
+        balance: number(account.billing.balance), frozen: number(account.billing.frozen), recharged: number(account.billing.recharged),
+        notify: account.billing.notify ? {
+          enabled: bool(account.billing.notify.enabled), threshold: number(account.billing.notify.threshold),
+          kind: code(account.billing.notify.kind),
+        } : null,
+        usage: account.billing.usage ? {
+          requests: number(account.billing.usage.requests), tokens: number(account.billing.usage.tokens),
+          cost: number(account.billing.usage.cost), actualCost: number(account.billing.usage.actualCost),
+        } : null,
+        platforms: list(account.billing.platforms, 12).map(item => ({
+          platform: code(item?.platform),
+          dailyLimit: number(item?.dailyLimit), dailyUsage: number(item?.dailyUsage),
+          weeklyLimit: number(item?.weeklyLimit), weeklyUsage: number(item?.weeklyUsage),
+          monthlyLimit: number(item?.monthlyLimit), monthlyUsage: number(item?.monthlyUsage),
+        })),
+      } : null,
+      billingError: code(account?.billingError) || null,
+      keyEvents: list(account?.keyEvents, 8).map(event => ({
+        at: timestamp(event?.at), action: code(event?.action), groupId: id(event?.groupId), code: code(event?.code),
+      })).filter(event => event.action),
       keyState: {
         ready: number(account?.keyState?.ready), pending: number(account?.keyState?.pending),
         autoCreateKeys: bool(account?.keyState?.autoCreateKeys),
+        maxKeysPerAccount: number(account?.keyState?.maxKeysPerAccount), minBalance: number(account?.keyState?.minBalance),
       },
     })),
   };

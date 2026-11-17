@@ -174,6 +174,25 @@ fieldset:disabled { opacity: .6; }
 .routes li { display: grid; grid-template-columns: 76px minmax(0, 1.4fr) 70px auto; gap: 10px; align-items: center; padding: 7px 11px; border-bottom: 1px solid var(--line); font-size: 12px; }
 .routes li:last-child { border-bottom: 0; }
 
+/* account billing cards */
+.accounts { display: flex; flex-wrap: wrap; gap: 12px; margin: 4px 0 16px; }
+.accounts:empty { display: none; }
+.account-card { flex: 1 1 360px; max-width: 640px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 13px 14px; }
+.account-card header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.account-name { font-size: 12.5px; font-weight: 600; color: var(--fg); }
+.account-balance { margin-top: 10px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.account-figure { font-size: 24px; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.account-sub { color: var(--muted); font-size: 11.5px; }
+.account-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; margin: 12px 0 0; padding: 11px 0 0; border-top: 1px solid var(--line); }
+.account-metrics dt { color: var(--muted); font-size: 11px; }
+.account-metrics dd { margin: 1px 0 0; font-size: 13px; font-variant-numeric: tabular-nums; }
+.account-platforms { list-style: none; margin: 10px 0 0; padding: 0; border-top: 1px solid var(--line); }
+.account-platforms li { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; font-size: 11.5px; border-bottom: 1px solid var(--line); }
+.account-platforms li:last-child { border-bottom: 0; }
+.account-platforms .mono { color: var(--muted); font-variant-numeric: tabular-nums; }
+.account-events { margin: 9px 0 0; color: var(--muted); font-size: 11px; }
+.account-empty { margin: 9px 0 0; color: var(--muted); font-size: 11.5px; }
+
 /* footnote */
 .footnote { margin-top: 26px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11.5px; }
 .footnote p + p { margin-top: 4px; }

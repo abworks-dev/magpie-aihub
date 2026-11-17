@@ -1,6 +1,6 @@
 # 权限与副作用流程
 
-v0.2.2 预发布版本的代码阅读映射。已有 local mock 和 Edge 合成代理验证；未做真实生产 / 账号联调，六平台外部接口仅按公开代码核对，不能当作六平台实测。静态访问规则见 [权限](permissions.md)，参数见 [配置与凭据](variables.md)。
+v0.3.0 预发布版本的代码阅读映射。已有 local mock 和 Edge 合成代理验证；未做真实生产 / 账号联调，六平台外部接口仅按公开代码核对，不能当作六平台实测。静态访问规则见 [权限](permissions.md)，参数见 [配置与凭据](variables.md)。
 
 ## 1. 保存路由选项
 
@@ -80,5 +80,7 @@ Key 准备失败立即停止当前路由，返回 error.type=aihub_routing_error
 服务只监听 127.0.0.1，仅接受 GET/HEAD，要求精确 Host、Origin 缺省或 `null`、无 body；`/snapshot` 还需要服务注入页面的进程级 token，并以 `Access-Control-Allow-Origin: null` 允许不透明来源的沙箱页面读取。Cloud 仅批准四个静态资源，未批准 service 新路由；opc-agent 生产私有路径拒绝不可绕过。
 
 快照读取最多 32 个内存运行时，读取目录可触发远端 GET、令牌刷新与保存；不调用 keyFor 或任何推理。返回白名单分组状态/筛选原因、指标、目录新鲜度、Key 计数与最近 100 条路由，缺失指标 null；不返回认证、Key、Cookie、body 或原始 session。进程退出即失去记录，不是持久审计。
+
+账户模式额外返回余额卡：可用/冻结余额、累计请求与消耗、六平台日/月限额与用量，来自 `/api/v1/auth/me`、`/api/v1/usage/stats`、`/api/v1/user/platform-quotas`，默认 60 秒缓存（`balanceRefreshMs`）。读取失败时沿用最多 10 分钟的旧快照，否则显示安全 code；余额只影响 `minBalance` 建 Key 门限，不参与路由排序。
 
 证据：[快照](../src/telemetry.mjs)、[页面服务](../src/service.mjs)、[入口](../index.mjs)、[页面](../ui/app.js)。相关验证状态见 [测试覆盖映射](tests.md)。

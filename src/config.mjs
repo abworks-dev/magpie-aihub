@@ -6,6 +6,7 @@ export const BASE = `${ORIGIN}/v1`;
 
 const defaults = {
   maxMultiplier: 0.16, strategy: 'balanced', maxAttempts: 3, poolSize: 4,
+  minBalance: 0, maxKeysPerAccount: 8, balanceRefreshMs: 60_000,
   refreshMs: 60_000, maxStaleMs: 600_000, firstByteTimeoutMs: 30_000,
   totalTimeoutMs: 90_000, cooldownMs: 30_000, sessionTtlMs: 86_400_000,
   maxSessions: 5000, maxBodyBytes: 20 * 1024 * 1024,
@@ -25,6 +26,7 @@ export function settings(raw = {}) {
   const o = { ...defaults, ...raw };
   const numbers = {
     maxMultiplier: [0, 100], maxAttempts: [1, 5], poolSize: [1, 8],
+    minBalance: [0, 100_000], maxKeysPerAccount: [1, 32], balanceRefreshMs: [10_000, 3_600_000],
     refreshMs: [10_000, 3_600_000], maxStaleMs: [10_000, 3_600_000],
     firstByteTimeoutMs: [10, 120_000], totalTimeoutMs: [10, 300_000],
     cooldownMs: [10, 3_600_000], sessionTtlMs: [1000, 604_800_000],
@@ -33,7 +35,7 @@ export function settings(raw = {}) {
   for (const [key, [min, max]] of Object.entries(numbers)) {
     if (typeof o[key] !== 'number' || !Number.isFinite(o[key]) || o[key] < min || o[key] > max)
       throw new Error(`Invalid ${key}: expected ${min}..${max}`);
-    if (key !== 'maxMultiplier' && !Number.isInteger(o[key])) throw new Error(`${key} must be an integer`);
+    if (key !== 'maxMultiplier' && key !== 'minBalance' && !Number.isInteger(o[key])) throw new Error(`${key} must be an integer`);
   }
   if (!['economy', 'balanced', 'speed'].includes(o.strategy)) throw new Error('Invalid strategy');
   if (!['responses', 'chat'].includes(o.defaultApi)) throw new Error('Invalid defaultApi');

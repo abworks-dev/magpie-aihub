@@ -1,6 +1,6 @@
 # 架构
 
-magpie-aihub 是 Magpie 的消费端供应商插件：用用户自己的 AIHub 分组 Key 发送模型请求，在倍率、目录状态和进程内延迟记录范围内选组。供应商 ID 为 `aihub-auto`，远端固定 `https://aihub.top`。v0.2.2 预发布实现覆盖 openai / deepseek / zhipu / kimi / grok / gemini 六平台，仅同平台同模型 failover。
+magpie-aihub 是 Magpie 的消费端供应商插件：用用户自己的 AIHub 分组 Key 发送模型请求，在倍率、目录状态和进程内延迟记录范围内选组。供应商 ID 为 `aihub-auto`，远端固定 `https://aihub.top`。v0.3.0 预发布实现覆盖 openai / deepseek / zhipu / kimi / grok / gemini 六平台，仅同平台同模型 failover。
 
 本文以代码阅读、local mock 与 Edge 合成代理为依据；真实生产联调、真实 AIHub 账号与计费推理尚未验证。外部平台接口只按公开文档/公开代码核对，不代表六平台均已实测。独立 MIT 实现，不复制许可不明代码。
 
@@ -11,9 +11,10 @@ magpie-aihub 是 Magpie 的消费端供应商插件：用用户自己的 AIHub �
 | [入口](../index.mjs) | 注册 config、auth、provider.models、chat.headers 钩子并启动页面服务；按认证包 instanceId 缓存 Account / Router，最多 32 实例 |
 | [配置](../src/config.mjs) | 校验非敏感 options、平台与协议；解析手工 Key JSON；生成宿主模型配置 |
 | [平台](../src/platforms.mjs) | 六平台标识、`platform::model` 命名空间、模型描述与协议/SDK/API base 映射 |
-| [账户](../src/account.mjs) | 读取目录、刷新登录令牌、发现模型、恢复或创建专用 Key；变化经 Magpie client.auth.set 保存 |
+| [账户](../src/account.mjs) | 读取目录、刷新登录令牌、发现模型、恢复或创建专用 Key；受 maxKeysPerAccount 与 minBalance 约束，记录内存级 Key 事件；变化经 Magpie client.auth.set 保存 |
 | [API 适配](../src/api.mjs) | 固定 AIHub origin 的 GET / POST；15 秒超时、拒绝重定向；六平台目录与指标归一化 |
 | [路由](../src/router.mjs) | 请求校验、同平台同模型筛组、会话亲和、有限重试、流转交；内存保存亲和/冷却/延迟/锁/最近结果 |
+| [余额](../src/billing.mjs) | 账户模式读取 /api/v1/auth/me、/api/v1/usage/stats、/api/v1/user/platform-quotas → 余额、消耗与平台限额；不读 Key 列表 |
 | [密钥错误](../src/errors.mjs) | Key 准备稳定错误码与安全消息，不透出原始管理响应 |
 | [快照](../src/telemetry.mjs) | 目录与进程状态 → 白名单监控数据；可按需刷新目录，不推理、不建 Key |
 | [页面服务](../src/service.mjs) | 固定在 127.0.0.1 的 HTTP 服务：提供同一份页面与 GET /snapshot，注入进程级页面令牌，检查 Host / Origin / 方法 / body 并脱敏 |
@@ -37,7 +38,9 @@ magpie-aihub 是 Magpie 的消费端供应商插件：用用户自己的 AIHub �
 
 设置与监控共用一份页面。Magpie 提供静态页时只给 bridge 与 `providers:list`，且 CSP `connect-src 'none'` 让页面无法直接取数；页面上的监控标签会导航到插件自己的回环服务（`page.service`，`monitorPort` 默认 19871），或直接由服务提供同一文档。`magpie web` 会把该服务代理到插件页面路径下（Host 重写为回环、Origin 为 `null`），桌面版 Magpie 不代理，页面改为提示在本机打开 `http://127.0.0.1:<port>/`。
 
-服务只监听 127.0.0.1，仅接受 GET/HEAD，要求精确 Host、Origin 缺省或 `null`、无请求体；`/snapshot` 还需要服务注入到页面 `<meta>` 的进程级令牌（`x-aihub-service-token`），响应带 `Access-Control-Allow-Origin: null`，因此沙箱页面可读而其他站点/第三方框架不可读。捷径：服务在 web 代理下被沙箱化，页面无法保证同源。
+服务只监听 127.0.0.1，仅接受 GET/HEAD，要求精确 Host、Origin 缺省或 `null`、无请求体；`/snapshot` 还需要服务注入到页面 `<meta>` 的进程级令牌（`x-aihub-service-token`），响应带 `Access-Control-Allow-Origin: null`，因此沙箱页面可读而其他站点/第三方框架不可读。捷径：服务在 web 代理下被沙箱化，无法保证同源。
+
+账户模式的快照还带余额卡：`/api/v1/auth/me` 的可用/冻结余额与充值总额、`/api/v1/usage/stats` 的累计请求与消耗、`/api/v1/user/platform-quotas` 的六平台日/月限额与用量，按 60 秒缓存读取；读取失败时沿用最多 10 分钟的旧快照，否则显示 `billing_unavailable` / `billing_access_denied` / `billing_sign_in_required`。余额只用于展示与 `minBalance` 建 Key 门限，不参与路由排序；`/api/v1/keys` 返回明文 Key，插件不读该接口。
 
 快照经过字段白名单、数量/大小限制和脱敏，不返回原始 auth、请求 body、session ID 或管理响应。最近路由最多 100 条，仅进程内存；缺失/未就绪指标为 null，不能当成零或健康证据。
 
@@ -52,6 +55,7 @@ magpie-aihub 是 Magpie 的消费端供应商插件：用用户自己的 AIHub �
 | 目录、广告模型和 /v1/models 不保证推理可用；显式失败/不合格平台不可路由；默认未知状态仍可能可选 | [目录](../src/api.mjs)、[模型读取](../src/account.mjs) |
 | 创建前先保存 pending；未知结果含 401 不重放；只恢复本实例精确名称/组的唯一 active Key，不删除或改绑 | [keyFor](../src/account.mjs) |
 | 有 refresh 且已知 expires 临近时，准备新组 Key 前刷新；无到期证据不能保证创建不会遭遇认证失败 | [keyFor](../src/account.mjs) |
+| 余额只用于展示与 `minBalance` 门限；接口不可用时跳过门限而不是推断余额，也不影响已有 Key 使用 | [余额](../src/billing.mjs)、[金额门限](../src/account.mjs) |
 | instanceId 检查减少旧连接误写，但宿主 auth API 无 CAS，检查与写入之间重连仍有竞态 | [保存](../src/account.mjs)、[loader](../index.mjs) |
 | 首块前重试可能重复计费；首块后中断只报错，不重放；Key 准备失败以稳定 code 停止 | [Router](../src/router.mjs)、[错误](../src/errors.mjs) |
 | totalTimeoutMs 覆盖 body 缓冲/排队/首块前预算，读到首块后清除，不限制整个长流 | [路由](../src/router.mjs)、[waitFor](../src/async.mjs) |

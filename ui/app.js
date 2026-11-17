@@ -7,6 +7,7 @@
   const defaults = {
     strategy: 'balanced', maxMultiplier: 0.16, maxAttempts: 3, poolSize: 4,
     excludedGroups: [], allowedGroups: [], requirePassed: false,
+    minBalance: 0, maxKeysPerAccount: 8,
     autoCreateKeys: false, defaultApi: 'responses', models: [], monitorPort: 19871,
     platforms: [...platforms],
   };
@@ -73,6 +74,8 @@
     if (typeof raw.maxMultiplier === 'number' && Number.isFinite(raw.maxMultiplier) && raw.maxMultiplier >= 0 && raw.maxMultiplier <= 100) result.maxMultiplier = raw.maxMultiplier;
     if (validInteger(raw.maxAttempts, 1, 5)) result.maxAttempts = raw.maxAttempts;
     if (validInteger(raw.poolSize, 1, 8)) result.poolSize = raw.poolSize;
+    if (typeof raw.minBalance === 'number' && Number.isFinite(raw.minBalance) && raw.minBalance >= 0 && raw.minBalance <= 100000) result.minBalance = raw.minBalance;
+    if (validInteger(raw.maxKeysPerAccount, 1, 32)) result.maxKeysPerAccount = raw.maxKeysPerAccount;
     for (const key of ['excludedGroups', 'allowedGroups']) if (groupList(raw[key])) result[key] = [...new Set(raw[key])];
     for (const key of ['requirePassed', 'autoCreateKeys']) if (typeof raw[key] === 'boolean') result[key] = raw[key];
     if (['responses', 'chat'].includes(raw.defaultApi)) result.defaultApi = raw.defaultApi;
@@ -85,7 +88,7 @@
 
   function populate(raw) {
     const options = safeOptions(raw);
-    for (const key of ['strategy', 'maxMultiplier', 'maxAttempts', 'poolSize', 'defaultApi', 'monitorPort']) $(key).value = String(options[key]);
+    for (const key of ['strategy', 'maxMultiplier', 'maxAttempts', 'poolSize', 'defaultApi', 'monitorPort', 'minBalance', 'maxKeysPerAccount']) $(key).value = String(options[key]);
     for (const platform of platforms) $(`platform-${platform}`).checked = options.platforms.includes(platform);
     for (const key of ['excludedGroups', 'allowedGroups']) $(key).value = options[key].join(', ');
     for (const key of ['requirePassed', 'autoCreateKeys']) $(key).checked = options[key];
@@ -158,6 +161,8 @@
       maxMultiplier: readNumber('maxMultiplier', '最高倍率', 0, 100, false),
       maxAttempts: readNumber('maxAttempts', '最多尝试次数', 1, 5),
       poolSize: readNumber('poolSize', '候选池大小', 1, 8),
+      minBalance: readNumber('minBalance', '余额阈值', 0, 100000, false),
+      maxKeysPerAccount: readNumber('maxKeysPerAccount', '每账户 Key 上限', 1, 32),
       excludedGroups: readGroups('excludedGroups', '排除分组'),
       allowedGroups: readGroups('allowedGroups', '仅允许分组'),
       requirePassed: $('requirePassed').checked,
@@ -297,6 +302,50 @@
     if (outcome === 'ok' || outcome === 'success' || outcome === 'selected') return 'pill-ok';
     return outcome ? 'pill-off' : 'pill-neutral';
   }
+  const money = value => num(value) === null ? '—' : '$' + num(value).toFixed(2);
+
+  function renderAccounts(list) {
+    const target = $('monitor-accounts');
+    if (!target) return;
+    if (!list.length) { target.innerHTML = ''; return; }
+    target.innerHTML = list.map(account => {
+      const billing = account.billing;
+      const keys = account.keyState ?? {};
+      const mode = account.mode === 'manual' ? '手工 Key' : '账户登录';
+      const head = '<header><span class="account-name">' + escapeHtml(account.label || '账户') + '</span>'
+        + '<span class="pill pill-neutral">' + mode + '</span>'
+        + (account.stale ? '<span class="pill pill-off">目录较旧</span>' : '') + '</header>';
+      if (!billing) {
+        const why = account.billingError ? '余额读取失败：' + escapeHtml(account.billingError)
+          : account.mode === 'manual' ? '手工 Key 模式不读取账户余额' : '余额尚未读取';
+        return '<article class="account-card">' + head + '<p class="account-empty">' + why + '</p></article>';
+      }
+      const platforms = Array.isArray(billing.platforms) ? billing.platforms : [];
+      const total = pick => platforms.reduce((sum, item) => sum + (num(item?.[pick]) ?? 0), 0);
+      const usage = billing.usage;
+      const events = Array.isArray(account.keyEvents) ? account.keyEvents.slice(-3) : [];
+      const platformList = platforms.length ? '<ul class="account-platforms">' + platforms.map(item => {
+        const daily = '今 ' + money(item.dailyUsage) + (num(item.dailyLimit) === null ? '' : ' / ' + money(item.dailyLimit));
+        const monthly = num(item.monthlyLimit) === null ? '' : ' · 月 ' + money(item.monthlyUsage) + ' / ' + money(item.monthlyLimit);
+        return '<li><span>' + escapeHtml(platformLabel[item.platform] ?? item.platform ?? '—') + '</span><span class="mono">' + daily + monthly + '</span></li>';
+      }).join('') + '</ul>' : '';
+      const actionLabel = { created: '新建 Key', recovered: '复用已有 Key', blocked: '已阻止' };
+      const eventLine = events.length ? '<p class="account-events">' + events.map(e => {
+        const label = actionLabel[e.action] ?? e.action;
+        return clock(e.at) + ' ' + escapeHtml(label) + (e.action === 'blocked' && e.code ? '（' + escapeHtml(e.code) + '）' : '');
+      }).join(' · ') + '</p>' : '';
+      return '<article class="account-card">' + head
+        + '<div class="account-balance"><span class="account-figure">' + money(billing.balance) + '</span>'
+        + '<span class="account-sub">可用余额 · 冻结 ' + money(billing.frozen) + '</span></div>'
+        + '<dl class="account-metrics">'
+        + '<div><dt>今日消耗</dt><dd>' + money(total('dailyUsage')) + '</dd></div>'
+        + '<div><dt>本月消耗</dt><dd>' + money(total('monthlyUsage')) + '</dd></div>'
+        + '<div><dt>累计请求</dt><dd>' + (usage && num(usage.requests) !== null ? num(usage.requests).toLocaleString('zh-CN') : '—') + '</dd></div>'
+        + '<div><dt>专用 Key</dt><dd>' + (keys.ready ?? 0) + (keys.maxKeysPerAccount ? ' / ' + keys.maxKeysPerAccount : '') + '</dd></div>'
+        + '</dl>' + platformList + eventLine + '</article>';
+    }).join('');
+  }
+
   const percent = value => num(value) === null ? '—' : `${(num(value) * 100).toFixed(1)}%`;
   const decimal = (value, digits = 2) => num(value) === null ? '—' : num(value).toFixed(digits);
   const clock = value => {
@@ -325,6 +374,7 @@
     const stale = accountsList.some(account => account.stale);
     const errorCode = accountsList.find(account => account.errorCode)?.errorCode ?? '';
     $('monitor-updated').textContent = state.snapshot?.generatedAt ? `更新于 ${clock(state.snapshot.generatedAt)}` : '';
+    renderAccounts(accountsList);
 
     $('monitor-summary').innerHTML = [
       ['账户', accountsList.length, errorCode ? `目录：${escapeHtml(errorCode)}` : stale ? '目录较旧' : '目录已刷新'],

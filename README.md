@@ -2,16 +2,16 @@
 
 面向 **aihub.top 普通消费者** 的 Magpie Provider 插件。用自己的账户或分组 Key，在 Magpie 中提供一个 `aihub-auto` 上游入口，按倍率和延迟选组、保留会话线路、在首次响应前有限重试。
 
-**版本：v0.2.2（预发布）。** 当前实现覆盖 `openai`、`deepseek`、`zhipu`、`kimi`、`grok`、`gemini` 六个平台；非 OpenAI 模型使用 `platform::model` 命名空间，仅在**同平台、同模型**的分组间 failover。Gemini 可显式选择 Responses 或原生 Gemini 协议，其他平台支持 Responses / Chat Completions。外部平台接口依据公开文档与公开代码核对，**不代表六平台真实调用均已实测**。
+**版本：v0.3.0（预发布）。** 当前实现覆盖 `openai`、`deepseek`、`zhipu`、`kimi`、`grok`、`gemini` 六个平台；非 OpenAI 模型使用 `platform::model` 命名空间，仅在**同平台、同模型**的分组间 failover。Gemini 可显式选择 Responses 或原生 Gemini 协议，其他平台支持 Responses / Chat Completions。外部平台接口依据公开文档与公开代码核对，**不代表六平台真实调用均已实测**。v0.3.0 新增账户余额卡、每账户 Key 上限与余额阈值暂停建 Key。
 
-已通过 185 项本地测试，并在隔离的官方 Magpie 0.1.3250 `magpie web` 实例中经真实浏览器打开：页面经插件服务代理加载、`magpie.ready` 连通、监控标签跳转到服务页并在沙箱 iframe 内读到 `/snapshot`。官方 Magpie 0.1.3250 隔离检查涵盖插件加载、合成凭据登录、六平台 8 个模型与三种 SDK 注册。真实生产实例联调、真实 AIHub 账户与计费推理仍未验证。独立 MIT 实现，不复制许可不明项目代码。图标取自 [AIHub 官方站点](https://aihub.top/) 公开页面的 PNG favicon，内嵌到元数据与页面；品牌图像权利归原站点。
+已通过 189 项本地测试，并在隔离的官方 Magpie 0.1.3250 `magpie web` 实例中经真实浏览器打开：页面经插件服务代理加载、`magpie.ready` 连通、监控标签跳转到服务页并在沙箱 iframe 内读到 `/snapshot`。余额/消耗接口来自已登录 AIHub 页面的实际响应样本，但页面余额卡与 Key 上限保护只在合成快照和本地 Edge 渲染中验证。官方 Magpie 0.1.3250 隔离检查涵盖插件加载、合成凭据登录、六平台 8 个模型与三种 SDK 注册。真实生产实例联调、真实 AIHub 账户与计费推理仍未验证。独立 MIT 实现，不复制许可不明项目代码。图标取自 [AIHub 官方站点](https://aihub.top/) 公开页面的 PNG favicon，内嵌到元数据与页面；品牌图像权利归原站点。
 
 ## 安装
 
 在 Magpie 插件管理页添加以下固定版本：
 
 ```text
-github:abworks-dev/magpie-aihub#v0.2.2
+github:abworks-dev/magpie-aihub#v0.3.0
 ```
 
 也可使用经核对的 commit 或完整本地仓库。公开仓库无需 GitHub 私有仓库权限；运行 Magpie 的主机仍需能够访问 GitHub。无需编译；推理路由不依赖独立代理，页面与只读监控由插件自己的回环服务提供。详细步骤与限制见[安装与首次验收](documentation/installation.md)。
@@ -48,7 +48,7 @@ github:abworks-dev/magpie-aihub#v0.2.2
 
 1. 读取账号可用分组、专属倍率以及供应商大厅；优先使用 v2 大厅接口。
 2. 按六平台目录识别分组，排除未启用平台、下架/不可见/明确检测失败、超倍率及人工排除的分组。
-3. 在用户允许自动创建后，为选中的分组创建 `magpie-aihub-<instance>-g<id>` 专用 Key，上限由 `poolSize` 控制。
+3. 在用户允许自动创建后，为选中的分组创建 `magpie-aihub-<instance>-g<id>` 专用 Key，上限由 `poolSize` 与 `maxKeysPerAccount` 共同控制；`minBalance` 大于 0 且读到的账户余额低于阈值时暂停新建。
 4. 保存平台归属与未完成创建记录；未知创建结果只重新查询，不盲目重建。
 
 **不会自动删除 Key，不会改绑现有 Key，也不会自动清理其他实例的 Key。** 没有验证 AIHub 建 Key 的额度参数，因此不会声称新 Key 自带消费限额。可在 AIHub 控制台为专用 Key 设置额度，关闭它的自动改组，并避免其他选组工具管理同一把 Key。
@@ -82,6 +82,8 @@ github:abworks-dev/magpie-aihub#v0.2.2
 | `allowedGroups` / `excludedGroups` | `[]` | 分组 ID 白名单/排除名单，排除优先 |
 | `requirePassed` | `false` | 仅使用大厅 `passed` 分组；手工模式不支持 |
 | `autoCreateKeys` | `false` | 允许账户模式按需创建 Key；关闭不撤销已有 Key |
+| `maxKeysPerAccount` | `8` | 插件专用 Key 总数上限（1–32）；达到后不再新建，已有 Key 继续可用 |
+| `minBalance` | `0` | 0 关闭；账户余额低于该值时暂停新建 Key，不删除已有 Key |
 | `defaultApi` | `responses` | 默认协议；可设 `chat`，Gemini 自动发现仍使用 Responses；原生 Gemini 须显式配置 |
 | `models` | `[]` | 字符串 ID 或 `{id, platform?, api?, context?, output?}`；空列表自动发现 |
 | `monitorPort` | `19871` | 页面服务与监控的回环端口；默认候选，**尚未在生产分配或确认可用** |
@@ -97,7 +99,9 @@ github:abworks-dev/magpie-aihub#v0.2.2
 
 服务只监听回环，仅接受 GET/HEAD，并要求精确 `Host`、`Origin` 缺省或为 `null`、无请求体；快照还需要服务注入到页面里的进程级令牌（`x-aihub-service-token`），因此别的站点或被沙箱化的第三方页面无法读取。Cloud 当前仅批准四个静态资源，未批准 service 新路由，不能据此声称生产监控已接通。如果 `magpie web` 前面还有反向代理或入口（Caddy/Nginx/Cloudflare 等），它必须原样转发 `/_magpie/plugin/<32 位 token>/_magpie/service/` 及其下的 `snapshot`，并且**不能剥离路径前缀**；只放行 `index.html`、`app.js`、`style.css`、`_magpie/bridge.js` 时，点「监控」会落到代理自己的 404 页（如 Caddy 的 `Not exposed by this Magpie entry.`），这不是插件渲染错误。
 
-快照展示分组可用性/筛选原因、倍率、可得的成功率/TPS/缓存命中率/价格、目录新鲜度、Key 数量及最近 100 条内存路由结果。缺失、未就绪或不可信的指标为 `null`。快照不返回原始认证包、Key、Cookie、请求/响应 body 或会话 ID。监控读取可按需发起远端目录 GET，并可能触发管理令牌刷新与保存；**不会推理探测或创建 Key**，也不是持久审计日志。
+快照顶部为账户卡：余额、冻结金额、今日/本月消耗（按平台配额汇总）、累计请求、专用 Key 数量与上限、各平台日/月用量与限额，以及最近建 Key/阻止事件。余额数据以 60 秒间隔读取 `/api/v1/auth/me`、`/api/v1/usage/stats`、`/api/v1/user/platform-quotas`；读取失败时沿用上次快照（最多 10 分钟），并显示 `billing_unavailable`、`billing_access_denied` 或 `billing_sign_in_required`，不推断数值。`/api/v1/keys` 会返回明文 Key，插件不读取也不记录该接口。
+
+快照展示分组可用性/筛选原因、倍率、可得的成功率/TPS/缓存命中率/价格、目录新鲜度、Key 数量及最近 100 条内存路由结果。缺失、未就绪或不可信的指标为 `null`。快照不返回原始认证包、Key、Cookie、请求/响应 body 或会话 ID。监控读取可按需发起远端目录 GET，并可能触发管理令牌刷新与保存；**不会推理探测或创建 Key**（但若自动发现与 `autoCreateKeys` 同时开启，业务请求仍可能触发建 Key）。
 
 Key 准备失败返回稳定的 `error.code` 和脱敏信息，停止本次请求，不盲目创建或重放：
 
@@ -129,7 +133,7 @@ npm run check
 npm pack --dry-run
 ```
 
-源码为无依赖 ESM，测试使用 Node >=22 内置测试器；运行环境为 Magpie 的 Bun 插件宿主。CI 同时检查 Node、Bun 与 Windows 上的官方宿主和两项浏览器回归；v0.2.0 提交 `5795e41` 的[三个任务](https://github.com/abworks-dev/magpie-aihub/actions/runs/43917943251)均通过，v0.2.1/v0.2.2 的验证记录见[验证记录](documentation/tests.md)。没有下载后自动执行的安装脚本。
+源码为无依赖 ESM，测试使用 Node >=22 内置测试器；运行环境为 Magpie 的 Bun 插件宿主。CI 同时检查 Node、Bun 与 Windows 上的官方宿主和两项浏览器回归；v0.2.0 提交 `5795e41` 的[三个任务](https://github.com/abworks-dev/magpie-aihub/actions/runs/43917943251)均通过，v0.2.1/v0.2.2/v0.3.0 的验证记录见[验证记录](documentation/tests.md)。没有下载后自动执行的安装脚本。
 
 验收顺序：先导入两把同平台同模型、已限额的测试 Key → 核对命名空间与协议 → 少量真实对话 → 检查会话保持和失败场景 → 再考虑账户自动建 Key。真实模型测试会产生费用；local mock 与 Edge 合成代理不证明六平台真实接口、生产权限、费用或可用性。opc-agent 生产私有路径已被拒绝，不能通过其他路径或身份绕过。
 

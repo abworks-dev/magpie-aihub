@@ -145,7 +145,14 @@ test('the sanitizer bounds accounts, groups and models and redacts contact-shape
         reasons: ['超过倍率上限'], hasKey: false, selectedCount: null,
       })),
       routes: Array.from({ length: 140 }, (_, index) => ({ platform: 'openai', model: 'm', groupId: index + 1, at: Date.now(), outcome: 'selected' })),
-      keyState: { ready: 0, pending: 1, autoCreateKeys: true },
+      keyState: { ready: 0, pending: 1, autoCreateKeys: true, maxKeysPerAccount: 9, minBalance: 3 },
+      billing: {
+        at: Date.now(), balance: 12.5, frozen: 0, recharged: 20, notify: { enabled: true, threshold: 2, kind: 'fixed' },
+        usage: { requests: 5, tokens: 100, cost: 1, actualCost: 0.9 },
+        platforms: Array.from({ length: 14 }, () => ({ platform: 'openai', dailyLimit: null, dailyUsage: 0.1, weeklyLimit: null, weeklyUsage: null, monthlyLimit: 9, monthlyUsage: 1 })),
+      },
+      billingError: 'billing_unavailable',
+      keyEvents: [{ at: Date.now(), action: 'created', groupId: 1, code: 'created' }],
     }],
   }));
   assert.equal(view.accounts.length, 1);
@@ -155,6 +162,10 @@ test('the sanitizer bounds accounts, groups and models and redacts contact-shape
   assert.ok(!view.accounts[0].groups[0].name.includes('@'));
   assert.equal(view.accounts[0].groups[0].metrics.successRate, null);
   assert.equal(view.accounts[0].stale, true);
+  assert.equal(view.accounts[0].billing.platforms.length, 12);
+  assert.equal(view.accounts[0].billingError, 'billing_unavailable');
+  assert.equal(view.accounts[0].keyEvents.length, 1);
+  assert.equal(view.accounts[0].keyState.maxKeysPerAccount, 9);
 });
 
 test('the service binds once on loopback and rejects a second listener on the same port', async () => {

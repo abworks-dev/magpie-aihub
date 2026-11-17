@@ -34,3 +34,28 @@ test('monitor returns safe stale states for failed catalogue reads rather than r
   assert.deepEqual(result.accounts[0].groups, []);
   assert.doesNotMatch(JSON.stringify(result), /SECRET_REMOTE_BODY/);
 });
+
+test('monitor exposes billing and key audit metadata without account identity', async () => {
+  const runtime = {
+    account: {
+      data: { mode: 'managed', keys: [] },
+      catalogue: async () => {},
+      directoryRows: [],
+      audit: [{ at: 10, action: 'created', groupId: 4, code: 'created' }],
+      billingInfo: async () => ({
+        at: 20, balance: 12.5, frozen: 0, recharged: 30,
+        notify: { enabled: true, threshold: 2, kind: 'fixed' },
+        usage: { requests: 5, tokens: 100, cost: 1, actualCost: 0.8 },
+        platforms: [{ platform: 'openai', dailyLimit: null, dailyUsage: 0.2, weeklyLimit: null, weeklyUsage: null, monthlyLimit: null, monthlyUsage: null }],
+      }),
+    },
+    router: { prune() {}, sessions: new Map(), cooldown: new Map(), lastRoutes: [] },
+  };
+  const result = await monitorSnapshot(new Map([['any', runtime]]), settings());
+  assert.equal(result.accounts[0].billing.balance, 12.5);
+  assert.equal(result.accounts[0].billing.usage.requests, 5);
+  assert.equal(result.accounts[0].billingError, null);
+  assert.deepEqual(result.accounts[0].keyEvents, [{ at: 10, action: 'created', groupId: 4, code: 'created' }]);
+  assert.equal(result.accounts[0].keyState.maxKeysPerAccount, 8);
+  assert.equal(result.accounts[0].keyState.minBalance, 0);
+});

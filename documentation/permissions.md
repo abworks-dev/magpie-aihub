@@ -1,6 +1,6 @@
 # 权限
 
-插件没有应用用户角色、租户 claim、数据库表或 RLS。宿主开放页面、桥接与认证；服务端使用宿主认证包，AIHub 决定账号令牌和 Key 的远端权限。本表映射 v0.2.2 预发布代码；真实生产 / 账号联调未验证，local mock 与 Edge 合成代理不等于六平台实测。
+插件没有应用用户角色、租户 claim、数据库表或 RLS。宿主开放页面、桥接与认证；服务端使用宿主认证包，AIHub 决定账号令牌和 Key 的远端权限。本表映射 v0.3.0 预发布代码；真实生产 / 账号联调未验证，local mock 与 Edge 合成代理不等于六平台实测。
 
 ## 执行主体
 
@@ -34,6 +34,7 @@
 | 六平台推理 POST | 经宿主模型调用 | 已导入 Key | 已有/恢复/允许创建的 Key | [Router](../src/router.mjs)、[平台](../src/platforms.mjs)：同平台同模型；Gemini responses/gemini，其余 responses/chat |
 | 其他 URL / query / 方法 | 无入口 | 拒绝 | 拒绝 | [Router](../src/router.mjs)：固定 origin、精确路径；仅原生 Gemini 流式可选 alt=sse |
 | 监控 GET /snapshot | 服务页面读取 | 读已导入目录/状态 | 可按需远端 GET 目录，可能刷新/保存令牌 | [快照](../src/telemetry.mjs)、[页面服务](../src/service.mjs)：不推理、不建 Key；无原始 auth/body/session |
+| 余额读取 GET /auth/me、/usage/stats、/platform-quotas | 服务页面读取 | 已登录账户令牌 | GET，失败沿用旧快照或安全 code | [余额](../src/billing.mjs)：不读 /api/v1/keys 明文 Key，不参与路由排序 |
 
 ## 凭据与请求隔离
 
