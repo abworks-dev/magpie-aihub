@@ -347,12 +347,12 @@ export class Router {
       // it no longer doubles as a key budget.
       candidates = candidates.slice(0, Math.max(1, this.o.poolSize));
       const poolBlocked = beforePool.length - candidates.length;
-      let attempts = 0, keyMismatch = 0;
+      let attempts = 0, keyMismatch = 0, keyBlocked = 0, firstKeyFailure = null;
       let payload = {};
       try { payload = bytes?.length ? JSON.parse(bytes) : {}; } catch { payload = {}; }
       const streaming = payload?.stream === true;
       const inboundPath = url.pathname === '/v1/chat/completions' ? 'chat' : 'responses';
-      for (const candidate of candidates) {
+      for (const [index, candidate] of candidates.entries()) {
         signal.throwIfAborted();
         if (attempts >= this.o.maxAttempts) break;
         let key;
@@ -361,12 +361,26 @@ export class Router {
         } catch (error) {
           signal.throwIfAborted();
           const failure = keyFailure(error);
+          // A group that cannot mint a key (cap, balance, switch) says nothing about the
+          // groups that already own one, so keep looking and report this if nothing ran.
+          const recoverable = ['key_cap_reached', 'balance_too_low', 'key_creation_disabled'].includes(failure.code);
+          if (recoverable) { keyBlocked += 1; firstKeyFailure ??= failure; continue; }
           this.recordRoute(candidate, model, failure.code);
           return errorResponse(failure.message, 503, failure.code);
         }
         try {
-          const ids = await this.account.modelIds(key, this.o, signal);
-          if (!ids.some(id => bareModelId(id) === model)) { keyMismatch += 1; continue; }
+          let ids = await this.account.modelIds(key, this.o, signal);
+          if (!ids.some(id => bareModelId(id) === model)) {
+            // The key's own catalogue can lag the group's: refresh once before
+            // treating a miss as final.
+            ids = await this.account.modelIds(key, { ...this.o, refreshMs: 0 }, signal);
+            if (!ids.some(id => bareModelId(id) === model)) {
+              keyMismatch += 1;
+              // Last resort: ask the remaining group anyway. Its own answer (a
+              // 404 or a real completion) beats a guess made from stale lists.
+              if (index < candidates.length - 1) continue;
+            }
+          }
         } catch {
           signal.throwIfAborted();
           this.penalize(candidate.groupId);
@@ -506,9 +520,15 @@ export class Router {
         } finally { clearTimeout(timer); }
       }
       const notes = [];
-      if (poolBlocked > 0) notes.push(`${poolBlocked} groups have no dedicated key and the pool is full (${this.account.data.keys.length} of ${this.o.maxKeysPerAccount} keys); raise the pool size or revoke an unused key`);
-      if (keyMismatch > 0) notes.push(`${keyMismatch} keyed groups do not serve this model yet, so no key could be tried; raise the pool size so one of them can get its own key`);
+      if (poolBlocked > 0) notes.push(`${poolBlocked} groups need a new key but the account key limit is reached (${this.account.data.keys.length} of ${this.o.maxKeysPerAccount}); prune an idle key or raise the limit`);
+      if (keyBlocked > 0) notes.push(`${keyBlocked} groups could not mint a key; the groups that already own one were tried instead`);
+      if (keyMismatch > 0) notes.push(`${keyMismatch} keyed groups did not list this model in their own catalogue`);
       const note = notes.length ? `; ${notes.join('; ')}` : '';
+      // A key problem is the actionable reason when no request ever left.
+      if (attempts === 0 && firstKeyFailure) {
+        this.recordRoute(candidates[0] ?? { groupId: 0, platform: platform ?? 'openai' }, model, firstKeyFailure.code);
+        return errorResponse(firstKeyFailure.message, 503, firstKeyFailure.code);
+      }
       const source = ` [source=${JSON.stringify(supplied).slice(0, 48)} hint=${hint || 'none'} bare=${bareModel}]`;
       return errorResponse(this.routeFailure(catalogue.filter(c => (c.platform ?? 'openai') === platform), model, platform, catalogue) + note + source, 503, 'no_eligible_route');
     } catch {

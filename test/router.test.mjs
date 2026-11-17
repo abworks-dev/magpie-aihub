@@ -306,13 +306,26 @@ test('stateful previous_response_id and conversation requests return 400 without
   }
 });
 
-test('a model absent from every group model catalogue triggers no inference requests', async () => {
+test('a model missing from every key catalogue still asks the last group once', async () => {
   const { router, account, calls, discovered } = fixture();
   account.modelIds = async key => { discovered.push(key.groupId); return ['other-model']; };
-  const response = await router.fetch(request());
-  assert.equal(response.status, 503);
-  assert.deepEqual(discovered, [1, 2]);
-  assert.deepEqual(calls, []);
+  const { response, text } = await consume(router, request());
+  assert.equal(response.status, 200);
+  assert.equal(text, 'group-2');
+  assert.deepEqual(discovered, [1, 1, 2, 2]);
+  assert.equal(calls.length, 1);
+});
+
+test('a full key pool on the first group does not abort the whole route', async () => {
+  const { router, account, calls } = fixture();
+  const { KeyError } = await import('../src/errors.mjs');
+  account.keyFor = async c => {
+    if (c.groupId === 1) throw new KeyError('key_cap_reached', '专用 Key 数量已达上限 32');
+    return { groupId: c.groupId, key: 'route-key-2' };
+  };
+  const { response } = await consume(router, request());
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
 });
 
 test('inference attempts remain bounded even when every group is retryable', async () => {
