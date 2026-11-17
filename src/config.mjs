@@ -27,7 +27,7 @@ export function settings(raw = {}) {
   }
   const o = { ...defaults, ...raw };
   const numbers = {
-    maxMultiplier: [0, 100], maxAttempts: [1, 5], poolSize: [1, 8],
+    maxMultiplier: [0, 100], maxAttempts: [1, 5], poolSize: [1, 32],
     minBalance: [0, 100_000], maxKeysPerAccount: [1, 32], balanceRefreshMs: [10_000, 3_600_000],
     refreshMs: [10_000, 3_600_000], maxStaleMs: [10_000, 3_600_000],
     firstByteTimeoutMs: [10, 120_000], totalTimeoutMs: [10, 300_000],

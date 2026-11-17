@@ -105,7 +105,7 @@
       result.platformCaps = Object.fromEntries(Object.entries(raw.platformCaps)
         .filter(([platform, cap]) => platforms.includes(platform) && typeof cap === 'number' && Number.isFinite(cap) && cap >= 0 && cap <= 100));
     if (validInteger(raw.maxAttempts, 1, 5)) result.maxAttempts = raw.maxAttempts;
-    if (validInteger(raw.poolSize, 1, 8)) result.poolSize = raw.poolSize;
+    if (validInteger(raw.poolSize, 1, 32)) result.poolSize = raw.poolSize;
     if (typeof raw.minBalance === 'number' && Number.isFinite(raw.minBalance) && raw.minBalance >= 0 && raw.minBalance <= 100000) result.minBalance = raw.minBalance;
     if (typeof raw.dailyBudget === 'number' && Number.isFinite(raw.dailyBudget) && raw.dailyBudget >= 0 && raw.dailyBudget <= 1000000) result.dailyBudget = raw.dailyBudget;
     if (typeof raw.priceAlertRatio === 'number' && Number.isFinite(raw.priceAlertRatio) && raw.priceAlertRatio >= 0.01 && raw.priceAlertRatio <= 10) result.priceAlertRatio = raw.priceAlertRatio;
@@ -198,7 +198,7 @@
       priceAlertRatio: readNumber('priceAlertRatio', '价格波动阈值', 0.01, 10, false),
       platformCaps: (() => { try { return textToCaps($('platformCaps').value); } catch (error) { return invalid('platformCaps', error.message); } })(),
       maxAttempts: readNumber('maxAttempts', '最多尝试次数', 1, 5),
-      poolSize: readNumber('poolSize', '候选池大小', 1, 8),
+      poolSize: readNumber('poolSize', '候选池大小', 1, 32),
       minBalance: readNumber('minBalance', '余额阈值', 0, 100000, false),
       maxKeysPerAccount: readNumber('maxKeysPerAccount', '每账户 Key 上限', 1, 32),
       excludedGroups: readGroups('excludedGroups', '排除分组'),

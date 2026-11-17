@@ -13,7 +13,7 @@
 | platformCaps | {}；平台→上限映射 | UI + Router | 每个平台自己的倍率上限，未列出的平台用 maxMultiplier；键只接受 openai/deepseek/zhipu/kimi/grok/gemini |
 | strategy | balanced；economy / balanced / speed / price / value / reliable | UI + Router | 按倍率、倍率×(1+min(ms,60000)/10000)、延迟、真实价格排序；`value` = 价格×(1+min(ms,60000)/10000)×(1+3×(1-成功率))；`reliable` = (1-成功率)×1e6+价格；未知延迟取 30000ms |
 | maxAttempts | 3；整数 1–5 | UI + Router | 推理发送次数含首次；Key / 模型读取不计入；首块前切换可能重复计费 |
-| poolSize | 4；整数 1–8 | UI + Account / Router | managed 保存 Key 上限，池满不换/删 Key；managed 发现不要求已有 Key，已有 Key 补充最多读取 N 个 |
+| poolSize | 4；整数 1–32 | UI + Account / Router | managed 保存 Key 上限，池满不换/删 Key；managed 发现不要求已有 Key，已有 Key 补充最多读取 N 个 |
 | excludedGroups | []；正安全整数数组 | UI + Router | 排除优先 |
 | allowedGroups | []；正安全整数数组 | UI + Router | 空数组不额外限组，仍受其他筛选 |
 | requirePassed | false；boolean | UI + Router | 要求大厅 passed=true；manual 缺该证据，开启会排除全部手工组 |
