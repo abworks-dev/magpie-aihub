@@ -48,7 +48,6 @@
   const saveRowButton = $('save-row-button');
   const controls = $('controls');
   const form = $('options-form');
-  const dirtyNote = $('dirty-note');
 
   function message(text, kind = '') {
     status.textContent = text;
@@ -344,7 +343,6 @@
 
   function setDirty(value) {
     state.dirty = value;
-    if (dirtyNote) dirtyNote.textContent = value ? '有未保存的更改。' : '设置只保存在此插件的非敏感选项里。';
     const badge = $('dirty-badge');
     if (badge) badge.hidden = !value;
     // The bottom bar only exists to catch unsaved edits; hide it otherwise.
