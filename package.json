@@ -1,6 +1,6 @@
 {
   "name": "magpie-aihub",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Consumer AIHub group routing, session affinity and bounded failover for Magpie",
   "type": "module",
   "main": "./index.mjs",

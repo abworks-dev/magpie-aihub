@@ -12,6 +12,10 @@
     billing_session_expired: '登录已失效，请重新登录', billing_sign_in_required: '账户登录态缺失',
     billing_access_denied: '账单接口无权限', billing_unavailable: '账单读取失败',
   };
+  // One icon set, 16px, currentColor: the eye toggles the masked account label.
+  const EYE_OPEN = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="2.6"/></svg>';
+  const EYE_CLOSED = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.2A10.6 10.6 0 0 1 12 6c6.4 0 10 6 10 6a17 17 0 0 1-3.2 3.7"/><path d="M6.3 7.9A17 17 0 0 0 2 12s3.6 6 10 6c1.5 0 2.8-.3 4-.9"/></svg>';
+
   const defaults = {
     strategy: 'balanced', maxMultiplier: 0.16, platformCaps: {}, maxAttempts: 3, poolSize: 4,
     dailyBudget: 0, priceAlertRatio: 0.2,
@@ -479,7 +483,7 @@
       const keys = account.keyState ?? {};
       const mode = account.mode === 'manual' ? '手工 Key' : '账户登录';
       const head = '<header><span class="account-name">' + escapeHtml(account.label || '账户') + '</span>'
-        + '<button type="button" class="account-eye" data-account="' + index + '" title="显示完整账号" aria-label="显示完整账号">👁</button>'
+        + '<button type="button" class="account-eye" data-account="' + index + '" title="显示完整账号" aria-label="显示完整账号">' + EYE_OPEN + '</button>'
         + '<span class="pill pill-neutral">' + mode + '</span>'
         + (account.stale ? '<span class="pill pill-off">目录较旧</span>' : '') + '</header>';
       if (!billing) {
@@ -601,7 +605,7 @@
       const stateLabel = row.eligible === true ? '可用' : row.passed === false ? '未通过' : '不可用';
       const why = row.eligible === true || !reasons.length ? '' : `<span class="cell-sub">${escapeHtml(reasons.slice(0, 2).join(' · '))}</span>`;
       const stateText = `<span class="pill ${row.eligible === true ? 'pill-ok' : 'pill-off'}">${stateLabel}</span>${why}`;
-      return `<tr class="${row.eligible === true ? '' : 'is-off'}">
+      return `<tr class="${row.eligible === true ? '' : 'is-off'}${row.eligible === true && Number(row.selectedCount) > 0 ? ' is-current' : ''}">
         <td><span class="cell-name">${escapeHtml(row.name || `分组 ${row.groupId ?? ''}`)}</span><span class="cell-sub">#${escapeHtml(row.groupId ?? '—')} · ${escapeHtml(row.account)}</span></td>
         <td>${escapeHtml(platformLabel[row.platform] ?? row.platform ?? '—')}</td>
         <td class="num">${row.multiplier === null || row.multiplier === undefined ? '—' : `×${decimal(row.multiplier, 3)}`}</td>
@@ -709,7 +713,7 @@
     if (button.dataset.shown === '1') {
       name.textContent = button.dataset.masked || name.textContent;
       button.dataset.shown = '0';
-      button.textContent = '👁';
+      button.innerHTML = EYE_OPEN;
       return;
     }
     try {
@@ -718,7 +722,7 @@
       button.dataset.masked = name.textContent;
       name.textContent = full;
       button.dataset.shown = '1';
-      button.textContent = '🙈';
+      button.innerHTML = EYE_CLOSED;
     } catch { /* keep the masked label */ }
   });
   wireGroupPicker();
