@@ -421,6 +421,35 @@ test("a group without a model list does not capture another platform's bare mode
   assert.equal(calls[0].group, 2, 'only the platform that lists the model is eligible');
 });
 
+test('an existing group key is reused before a new pool slot is spent', async () => {
+  const rows = [candidate(1, { multiplier: 0.1 }), candidate(2, { multiplier: 0.05 })];
+  const seen = [];
+  const account = {
+    data: { mode: 'managed', keys: [{ groupId: 1, key: 'own-1' }] },
+    catalogue: async () => rows,
+    keyFor: async c => ({ groupId: c.groupId, key: `own-${c.groupId}` }),
+    modelIds: async () => [model],
+  };
+  const router = new Router(account, settings({}), { fetcher: async (_url, init) => { seen.push(init.headers.get('authorization')); return new Response('ok'); } });
+  await consume(router, request());
+  assert.deepEqual(seen, ['Bearer own-1'], 'the keyed group wins even though another is cheaper');
+});
+
+test('a per-platform quota stops a second key on the same platform', async () => {
+  const rows = [candidate(1, { platform: 'openai', multiplier: 0.05 }), candidate(2, { platform: 'openai', multiplier: 0.06 })];
+  const calls = [];
+  const account = {
+    data: { mode: 'managed', keys: [] },
+    catalogue: async () => rows,
+    keyFor: async c => { account.data.keys.push({ groupId: c.groupId, key: `own-${c.groupId}` }); return { groupId: c.groupId, key: `own-${c.groupId}` }; },
+    modelIds: async () => [model],
+  };
+  const router = new Router(account, settings({ keysPerPlatform: 1, poolSize: 8 }), { fetcher: async (_url, init) => { calls.push(init.headers.get('authorization')); return new Response('ok'); } });
+  await consume(router, request());
+  await consume(router, request());
+  assert.deepEqual(calls, ['Bearer own-1', 'Bearer own-1'], 'the platform keeps a single key');
+});
+
 test('an exhausted route names the reason every group was dropped', async () => {
   const { router } = fixture([candidate(1, { multiplier: 5 })], {});
   const { response, text } = await consume(router, request());

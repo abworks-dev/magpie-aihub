@@ -16,7 +16,7 @@
     strategy: 'balanced', maxMultiplier: 0.16, platformCaps: {}, maxAttempts: 3, poolSize: 4,
     dailyBudget: 0, priceAlertRatio: 0.2,
     excludedGroups: [], allowedGroups: [], requirePassed: false,
-    minBalance: 0, maxKeysPerAccount: 8,
+    minBalance: 0, maxKeysPerAccount: 8, keysPerPlatform: 0,
     autoCreateKeys: false, defaultApi: 'responses', models: [], monitorPort: 19871,
     platforms: [...platforms],
   };
@@ -110,6 +110,7 @@
     if (typeof raw.dailyBudget === 'number' && Number.isFinite(raw.dailyBudget) && raw.dailyBudget >= 0 && raw.dailyBudget <= 1000000) result.dailyBudget = raw.dailyBudget;
     if (typeof raw.priceAlertRatio === 'number' && Number.isFinite(raw.priceAlertRatio) && raw.priceAlertRatio >= 0.01 && raw.priceAlertRatio <= 10) result.priceAlertRatio = raw.priceAlertRatio;
     if (validInteger(raw.maxKeysPerAccount, 1, 32)) result.maxKeysPerAccount = raw.maxKeysPerAccount;
+    if (validInteger(raw.keysPerPlatform, 0, 32)) result.keysPerPlatform = raw.keysPerPlatform;
     for (const key of ['excludedGroups', 'allowedGroups']) if (groupList(raw[key])) result[key] = [...new Set(raw[key])];
     for (const key of ['requirePassed', 'autoCreateKeys']) if (typeof raw[key] === 'boolean') result[key] = raw[key];
     if (['responses', 'chat'].includes(raw.defaultApi)) result.defaultApi = raw.defaultApi;
@@ -122,7 +123,7 @@
 
   function populate(raw) {
     const options = safeOptions(raw);
-    for (const key of ['strategy', 'maxMultiplier', 'maxAttempts', 'poolSize', 'defaultApi', 'monitorPort', 'minBalance', 'maxKeysPerAccount', 'dailyBudget', 'priceAlertRatio']) $(key).value = String(options[key]);
+    for (const key of ['strategy', 'maxMultiplier', 'maxAttempts', 'poolSize', 'defaultApi', 'monitorPort', 'minBalance', 'maxKeysPerAccount', 'keysPerPlatform', 'dailyBudget', 'priceAlertRatio']) $(key).value = String(options[key]);
     $('platformCaps').value = capsToText(options.platformCaps);
     for (const platform of platforms) $(`platform-${platform}`).checked = options.platforms.includes(platform);
     for (const key of ['excludedGroups', 'allowedGroups']) $(key).value = options[key].join(', ');
@@ -201,6 +202,7 @@
       poolSize: readNumber('poolSize', '候选池大小', 1, 32),
       minBalance: readNumber('minBalance', '余额阈值', 0, 100000, false),
       maxKeysPerAccount: readNumber('maxKeysPerAccount', '每账户 Key 上限', 1, 32),
+      keysPerPlatform: readNumber('keysPerPlatform', '每平台 Key 配额', 0, 32),
       excludedGroups: readGroups('excludedGroups', '排除分组'),
       allowedGroups: readGroups('allowedGroups', '仅允许分组'),
       requirePassed: $('requirePassed').checked,

@@ -19,6 +19,7 @@
 | requirePassed | false；boolean | UI + Router | 要求大厅 passed=true；manual 缺该证据，开启会排除全部手工组 |
 | autoCreateKeys | false；boolean | UI + Account | 主动开启才可 POST 创建；关闭不撤销已有 Key |
 | maxKeysPerAccount | 8；整数 1–32 | UI + Account | 插件专用 Key 总数上限；达到后 `key_cap_reached`，不删除已有 Key |
+| keysPerPlatform | 0；整数 0–32 | UI + Router | 每平台专用 Key 配额，0 表示不限；只限制新建，已有 Key 的分组不受影响 |
 | minBalance | 0；0–100000 有限数 | UI + Account | >0 时余额低于阈值暂停新建 Key（`balance_too_low`）；读取失败不推断余额、不阻塞已有 Key |
 | dailyBudget | 0；0–1000000 有限数 | UI + Router | 每日花费上限，按响应 usage 与分组真实价格累计；0 关闭；超限返回 429 `daily_budget_exceeded` |
 | priceAlertRatio | 0.2；0.01–10 有限数 | UI + Router | 真实价格相对上次观测的变化比例阈值，超出则记入监控「价格波动」；只提示，不参与路由 |

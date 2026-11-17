@@ -134,6 +134,11 @@
                   <input id="maxKeysPerAccount" name="maxKeysPerAccount" type="number" min="1" max="32" step="1" value="8">
                   <small>插件创建的专用 Key 总数上限，1–32。</small>
                 </label>
+                <label class="field">
+                  <span class="field-label">每平台 Key 配额</span>
+                  <input id="keysPerPlatform" name="keysPerPlatform" type="number" min="0" max="32" step="1" value="0">
+                  <small>每个平台最多占几把专用 Key，0 表示不限制；防止分组多的平台吃满候选池。</small>
+                </label>
               </div>
             </section>
 
