@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import net from 'node:net';
 import { metricsText, startService, serviceHandler, snapshotView } from '../src/service.mjs';
 
 function call(handler, { method = 'GET', path = '/', headers = {}, body = '' } = {}) {
@@ -240,4 +241,16 @@ test('the metrics text exposes only process counters', () => {
   assert.match(body, /aihub_failures_total 1/);
   assert.match(body, /aihub_spend_usd 0\.500000/);
   assert.doesNotMatch(body, /@|groups|keys/i);
+});
+
+test('a port the previous process is still releasing is retried instead of failing', async () => {
+  const blocker = net.createServer(socket => socket.end());
+  await new Promise(resolve => blocker.listen(0, '127.0.0.1', resolve));
+  const port = blocker.address().port;
+  setTimeout(() => blocker.close(), 300);
+  const server = await startService({ port, token: TOKEN, getSnapshot: async () => snapshot() });
+  assert.equal(server.address().port, port);
+  const response = await fetch(`http://127.0.0.1:${port}/snapshot`, { headers: AUTH });
+  assert.equal(response.status, 200);
+  await new Promise(resolve => server.close(resolve));
 });

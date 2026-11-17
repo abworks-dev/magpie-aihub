@@ -254,31 +254,54 @@ export function serviceHandler({ port, getSnapshot, getIdentities, getMetrics, t
  * may be created more than once per host process, and its own page should not
  * look like a port conflict.
  */
-export async function startService({ port, getSnapshot, getIdentities, token } = {}) {
+const listenOnce = (server, port) => new Promise((resolve, reject) => {
+  const settle = error => {
+    server.removeListener('listening', settle);
+    server.removeListener('error', settle);
+    if (error) reject(error); else resolve();
+  };
+  server.once('listening', () => settle());
+  server.once('error', settle);
+  server.listen(port, '127.0.0.1');
+});
+
+// A plugin reload may start this module in a new process while the previous
+// process is still releasing the port, so EADDRINUSE is transient here: retry
+// for a few seconds before giving up on the page.
+const listenWithRetry = async (server, port, attempts = 20, delay = 500) => {
+  for (let attempt = 0; ; attempt++) {
+    try { return await listenOnce(server, port); }
+    catch (error) {
+      if (port === 0 || error?.code !== 'EADDRINUSE' || attempt >= attempts)
+        throw new Error(`page service cannot listen on 127.0.0.1:${port}: ${error?.message ?? error}`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+};
+
+export async function startService({ port, getSnapshot, getIdentities, getMetrics, token } = {}) {
   if (port !== 0 && started.has(port)) {
     started.get(port).setSource(getSnapshot);
     started.get(port).setIdentities?.(getIdentities);
+    started.get(port).setMetrics?.(getMetrics);
     return started.get(port).server;
   }
-  const live = { getSnapshot, getIdentities };
-  const server = createServer(serviceHandler({ port, getSnapshot: () => live.getSnapshot(), getIdentities: () => (typeof live.getIdentities === 'function' ? live.getIdentities() : []), token }));
-  await new Promise((resolve, reject) => {
-    const settle = error => {
-      server.removeListener('listening', settle);
-      server.removeListener('error', settle);
-      if (error) reject(new Error(`page service cannot listen on 127.0.0.1:${port}: ${error.message}`));
-      else resolve();
-    };
-    server.once('listening', () => settle());
-    server.once('error', settle);
-    server.listen(port, '127.0.0.1');
-  });
+  const live = { getSnapshot, getIdentities, getMetrics };
+  const server = createServer(serviceHandler({
+    port,
+    getSnapshot: () => live.getSnapshot(),
+    getIdentities: () => (typeof live.getIdentities === 'function' ? live.getIdentities() : []),
+    getMetrics: () => (typeof live.getMetrics === 'function' ? live.getMetrics() : undefined),
+    token,
+  }));
+  await listenWithRetry(server, port);
   server.unref();
   if (port !== 0) {
     started.set(port, {
       server,
       setSource: next => { live.getSnapshot = next; },
       setIdentities: next => { live.getIdentities = next; },
+      setMetrics: next => { live.getMetrics = next; },
     });
     server.once('close', () => started.delete(port));
   }
