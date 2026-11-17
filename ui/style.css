@@ -200,22 +200,33 @@ fieldset:disabled { opacity: .6; }
 .filter span { font-variant-numeric: tabular-nums; color: var(--muted); }
 .filter.is-active { border-color: var(--accent); color: var(--fg); background: color-mix(in srgb, var(--accent) 8%, transparent); }
 
-.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-card); }
+.table-wrap { overflow: auto; max-height: calc(100vh - 210px); border: 1px solid var(--line); border-radius: var(--r-card); }
 .table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.table th, .table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; white-space: nowrap; }
-.table thead th { position: sticky; top: 0; background: var(--surface-2); font-weight: 500; color: var(--muted); font-size: 11px; z-index: 1; }
+.table th, .table td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; white-space: nowrap; }
+.table thead th { position: sticky; top: 0; background: var(--surface-2); font-weight: 500; color: var(--muted); font-size: 11px; z-index: 3; }
 .table tbody tr:hover { background: color-mix(in srgb, var(--fg) 3%, transparent); }
 .table tbody tr:last-child td { border-bottom: 0; }
 .table tbody tr.is-current td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 .table .num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); }
 .table tr.is-off td { color: var(--muted); }
-.cell-name { display: block; font-weight: 500; color: var(--fg); }
-.cell-sub { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; white-space: normal; }
+.cell-name { display: block; font-weight: 500; color: var(--fg); line-height: 1.35; }
+.cell-sub { display: block; color: var(--muted); font-size: 11px; margin-top: 0; line-height: 1.35; white-space: normal; }
 
 .pill { display: inline-block; padding: 1px 6px; border-radius: 6px; font-size: 11px; line-height: 1.6; border: 1px solid transparent; }
 .pill-ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); border-color: color-mix(in srgb, var(--ok) 30%, transparent); }
 .pill-off { color: color-mix(in srgb, var(--fg) 72%, var(--bg)); background: var(--surface-2); border-color: var(--line); }
 .pill-neutral { color: var(--muted); background: transparent; border-color: var(--line-strong); }
+.table th, .table td { vertical-align: middle; }
+.table tbody tr:hover td { background: var(--surface-2); }
+.table td:first-child, .table th:first-child { position: sticky; left: 0; background: var(--bg); z-index: 2; }
+.table thead th:first-child { background: var(--surface-2); z-index: 4; }
+.cell-group { max-width: 300px; }
+.cell-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px; }
+.cell-why { max-width: 220px; }
+.cell-state-text { font-size: 12px; }
+.dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: 1px; }
+.dot-ok { background: var(--ok); }
+.dot-off { background: color-mix(in srgb, var(--fg) 30%, var(--bg)); }
 
 .picker-list > .empty { grid-column: 1 / -1; }
 .empty { padding: 18px 16px; text-align: center; color: var(--muted); font-size: 12px; border: 1px dashed var(--line-strong); border-radius: var(--r-control); }
@@ -331,8 +342,8 @@ fieldset:disabled { opacity: .6; }
    the shell bar while the body scrolls. */
 .monitor-body table { width: 100%; border-collapse: collapse; }
 .monitor-body thead th {
-  position: sticky; top: 56px; z-index: 2;
-  background: var(--surface);
+  position: sticky; top: 0; z-index: 5;
+  background: var(--surface-2);
   box-shadow: inset 0 -1px 0 var(--line);
 }
 

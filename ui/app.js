@@ -502,7 +502,7 @@
         const monthly = num(item.monthlyLimit) === null ? '' : ' · 月 ' + money(item.monthlyUsage) + ' / ' + money(item.monthlyLimit);
         return '<li><span>' + escapeHtml(platformLabel[item.platform] ?? item.platform ?? '—') + '</span><span class="mono">' + daily + monthly + '</span></li>';
       }).join('') + '</ul>' : '';
-      const actionLabel = { created: '新建 Key', recovered: '复用已有 Key', blocked: '已阻止' };
+      const actionLabel = { created: '新建 Key', recovered: '复用已有 Key', blocked: '已阻止', evicted: '清理闲置 Key' };
       const eventLine = events.length ? '<p class="account-events">' + events.map(e => {
         const label = actionLabel[e.action] ?? e.action;
         return clock(e.at) + ' ' + escapeHtml(label) + (e.action === 'blocked' && e.code ? '（' + escapeHtml(e.code) + '）' : '');
@@ -581,9 +581,18 @@
         <span class="kpi-label">${label}</span>
         <span class="kpi-value">${value}</span>
         <span class="kpi-hint">${hint}</span>
-      </div>`).join('') + (changes.length ? '<div class="kpi"><span class="kpi-label">价格波动</span><span class="kpi-hint">'
-        + changes.map(change => `${escapeHtml(change.name || '#' + String(change.groupId ?? ''))} ${decimal(change.from, 4)}→${decimal(change.to, 4)}`).join(' · ')
-        + '</span></div>' : '');
+      </div>`).join('') + (changes.length ? (() => {
+      const all = changes.map(change => `${change.name || '#' + String(change.groupId ?? '')} ${decimal(change.from, 3)}→${decimal(change.to, 3)}`);
+      const first = changes[0];
+      const from = num(first.from);
+      const to = num(first.to);
+      const ratio = from > 0 && to !== null ? Math.round((to / from - 1) * 100) : null;
+      return `<div class="kpi" title="${escapeHtml(all.join('\n'))}">
+        <span class="kpi-label">价格波动</span>
+        <span class="kpi-value">${changes.length}</span>
+        <span class="kpi-hint">${escapeHtml(first.name || '#' + String(first.groupId ?? ''))} ${ratio === null ? '' : (ratio > 0 ? '+' : '') + ratio + '%'}${changes.length > 1 ? ` · 另 ${changes.length - 1} 处` : ''}</span>
+      </div>`;
+    })() : '');
 
     const counts = new Map();
     for (const row of rows) counts.set(row.platform, (counts.get(row.platform) ?? 0) + 1);
@@ -602,23 +611,20 @@
     }
     const rowsHtml = list.sort((a, b) => Number(b.eligible === true) - Number(a.eligible === true) || (a.multiplier ?? 1e9) - (b.multiplier ?? 1e9)).map(row => {
       const reasons = Array.isArray(row.reasons) ? row.reasons : [];
-      const stateLabel = row.eligible === true ? '可用' : row.passed === false ? '未通过' : '不可用';
-      const why = row.eligible === true || !reasons.length ? '' : `<span class="cell-sub">${escapeHtml(reasons.slice(0, 2).join(' · '))}</span>`;
-      const stateText = `<span class="pill ${row.eligible === true ? 'pill-ok' : 'pill-off'}">${stateLabel}</span>${why}`;
+      const stateLabel = row.eligible === true ? '可用' : (row.passed === false || row.detection === 'failed') ? '未通过' : '不可用';
+      const why = row.eligible === true || !reasons.length ? '' : `<span class="cell-sub cell-why" title="${escapeHtml(reasons.join('\n'))}">${escapeHtml(reasons[0])}${reasons.length > 1 ? ` +${reasons.length - 1}` : ''}</span>`;
+      const stateText = `<span class="dot ${row.eligible === true ? 'dot-ok' : 'dot-off'}"></span><span class="cell-state-text">${stateLabel}</span>${why}`;
       return `<tr class="${row.eligible === true ? '' : 'is-off'}${row.eligible === true && Number(row.selectedCount) > 0 ? ' is-current' : ''}">
-        <td><span class="cell-name">${escapeHtml(row.name || `分组 ${row.groupId ?? ''}`)}</span><span class="cell-sub">#${escapeHtml(row.groupId ?? '—')} · ${escapeHtml(row.account)}</span></td>
-        <td>${escapeHtml(platformLabel[row.platform] ?? row.platform ?? '—')}</td>
+        <td class="cell-group"><span class="cell-name">${escapeHtml(row.name || `分组 ${row.groupId ?? ''}`)}</span><span class="cell-sub">${escapeHtml(platformLabel[row.platform] ?? row.platform ?? '—')} · #${escapeHtml(row.groupId ?? '—')} · ${escapeHtml(row.account)}</span></td>
         <td class="num">${row.multiplier === null || row.multiplier === undefined ? '—' : `×${decimal(row.multiplier, 3)}`}</td>
         <td class="num">${num(row.latency) === null ? '—' : (num(row.latency) / 1000).toFixed(1) + 's'}</td>
         <td class="num" title="${num(row.metrics?.observedSeconds) === null ? '窗口时长未知' : `窗口 ${Math.round(num(row.metrics.observedSeconds) / 60)} 分钟`}">${num(row.metrics?.samples) === null ? '—' : num(row.metrics.samples).toLocaleString('zh-CN')}</td>
         <td class="num" title="${row.metrics?.successRateWindow ? `${row.metrics.successRateWindow} 档成功率 ${percent(row.metrics?.successRate)}${row.metrics.successRateWindow === '1h' ? '（大厅当前只给 1h 档）' : ''}` : '大厅未给成功率'}">${percent(row.metrics?.successRate)}</td>
         <td class="num">${percent(row.metrics?.cacheHitRate)}</td>
         <td class="num">${decimal(row.metrics?.tps, 1)}</td>
-        <td class="num" title="${num(row.metrics?.reputation) === null ? '大厅未给出评分' : `AIHub 评分 ${decimal(row.metrics.reputation, 2)}`}">${num(row.metrics?.reputation) === null ? '—' : decimal(row.metrics.reputation, 2)}</td>
-        <td class="num" title="${num(row.metrics?.realPrice) === null ? '窗口未就绪或没有区间样本' : `$${decimal(row.metrics.realPrice, 4)}/M ≈ ¥${(row.metrics.realPrice * 7.2).toFixed(2)}/M`}">${num(row.metrics?.realPrice) === null ? '—' : `$${decimal(row.metrics.realPrice, 4)}`}</td>
+        <td class="num" title="${num(row.metrics?.realPrice) === null ? '窗口未就绪或没有区间样本' : `$${decimal(row.metrics.realPrice, 3)}/M ≈ ¥${(row.metrics.realPrice * 7.2).toFixed(2)}/M`}">${num(row.metrics?.realPrice) === null ? '—' : `$${decimal(row.metrics.realPrice, 3)}`}</td>
         <td class="num" title="${escapeHtml((Array.isArray(row.cards) && row.cards.length ? row.cards : (Array.isArray(row.models) ? row.models : []).map(model => ({ model }))).slice(0, 20).map(card => `${card.model}${num(card.price) === null ? '' : ` · ¥${decimal(card.price, 4)}`}${num(card.sampleCount) === null ? '' : ` · ${card.sampleCount} 样本`}${card.health === 'failed' ? ' · 检测失败' : ''}`).join('\n'))}">${Array.isArray(row.models) ? row.models.length : 0}</td>
         <td class="num" title="${row.hasKey ? '本连接已为该分组建了 Key' : '本连接尚未为该分组建 Key'}">${row.selectedCount ?? 0}</td>
-        <td title="${row.detectedAt ? `检测时间 ${clock(row.detectedAt)}` : '没有检测时间'}">${row.detection === 'passed' ? '<span class="pill pill-ok">通过</span>' : row.detection === 'failed' || row.passed === false ? '<span class="pill pill-off">失败</span>' : '<span class="cell-sub">未测</span>'}</td>
         <td>${stateText}</td>
         <td class="num">${clock(row.lastUsedAt)}</td>
       </tr>`;
@@ -628,7 +634,7 @@
     $('monitor-body').innerHTML = `
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>分组</th><th>平台</th><th class="num">倍率</th><th class="num" title="大厅样本的首字耗时（TTFT）">首字</th><th class="num" title="区间窗口内的样本数">样本</th><th class="num">成功率</th><th class="num">缓存命中</th><th class="num">TPS</th><th class="num" title="AIHub 大厅给出的分组评分">评分</th><th class="num" title="按区间窗口的实际成本与 Token 折算为每百万 Token 美元，括号内为按 7.2 估算的人民币">真实价格 $/M</th><th class="num">模型</th><th class="num" title="当前会话里共享该分组的路由数">使用</th><th>检测</th><th>状态</th><th class="num">最后使用</th></tr></thead>
+          <thead><tr><th>分组</th><th class="num" title="大厅给出的倍率，悬停看评分">倍率</th><th class="num" title="大厅样本的首字耗时（TTFT）">首字</th><th class="num" title="区间窗口内的样本数">样本</th><th class="num">成功率</th><th class="num" title="缓存命中率">缓存</th><th class="num">TPS</th><th class="num" title="按区间窗口的实际成本与 Token 折算为每百万 Token 美元">价格 $/M</th><th class="num" title="大厅模型卡片里该分组声明的模型数">模型</th><th class="num" title="当前会话里共享该分组的路由数">使用</th><th title="是否通过全部闸门；悬停看被排除的原因">状态</th><th class="num">最后使用</th></tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
       </div>
