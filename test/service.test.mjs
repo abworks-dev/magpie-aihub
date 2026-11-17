@@ -188,6 +188,21 @@ test('the sanitizer bounds accounts, groups and models and redacts contact-shape
   assert.equal(view.accounts[0].keyState.maxKeysPerAccount, 9);
 });
 
+test('an overdrawn wallet keeps its negative balance instead of a dash', () => {
+  const view = JSON.parse(snapshotView({
+    schemaVersion: 1, generatedAt: new Date().toISOString(), accounts: [{
+      mode: 'managed',
+      billing: {
+        at: Date.now(), balance: -0.1, balanceKnown: true, frozen: 0, recharged: 0,
+        usage: { requests: 0, tokens: 0, cost: 0, actualCost: 0 }, platforms: [],
+      },
+    }],
+  }));
+  // The page prints money(billing.balance); a null here is the dash the reader saw.
+  assert.equal(view.accounts[0].billing.balance, -0.1);
+  assert.equal(view.accounts[0].billing.balanceKnown, true);
+});
+
 test('the service binds once on loopback and rejects a second listener on the same port', async () => {
   const first = await startService({ port: 0, token: TOKEN, getSnapshot: async () => snapshot() });
   const port = first.address().port;

@@ -35,6 +35,10 @@ const REGISTRY = Symbol.for('aihub-auto.page-service');
 const started = globalThis[REGISTRY] ?? (globalThis[REGISTRY] = new Map());
 const list = (value, limit) => Array.isArray(value) ? value.slice(0, limit) : [];
 const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+// A wallet balance is signed: an account that spent past its top-up reads
+// -$0.10, and the page must show that instead of a dash. Counts and prices keep
+// the non-negative clamp above.
+const signed = value => typeof value === 'number' && Number.isFinite(value) ? value : null;
 const bool = value => typeof value === 'boolean' ? value : null;
 const id = value => Number.isSafeInteger(value) && value > 0 ? value : null;
 const safeString = (value, limit = 160) => {
@@ -111,7 +115,7 @@ export function snapshotView(raw) {
       })),
       billing: account?.billing ? {
         at: timestamp(account.billing.at),
-        balance: number(account.billing.balance), balanceKnown: bool(account.billing.balanceKnown),
+        balance: signed(account.billing.balance), balanceKnown: bool(account.billing.balanceKnown),
         frozen: number(account.billing.frozen), recharged: number(account.billing.recharged),
         notify: account.billing.notify ? {
           enabled: bool(account.billing.notify.enabled), threshold: number(account.billing.notify.threshold),
