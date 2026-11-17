@@ -3,7 +3,13 @@ export const PLATFORMS = Object.freeze(['openai', 'deepseek', 'zhipu', 'kimi', '
 export const validPlatform = value => PLATFORMS.includes(value);
 export const protocolBase = api => `${origin}/${api === 'gemini' ? 'v1beta' : 'v1'}`;
 export const protocolNpm = api => api === 'gemini' ? '@ai-sdk/google' : api === 'chat' ? '@ai-sdk/openai-compatible' : '@ai-sdk/openai';
-export const publicModelId = (platform, id) => platform === 'openai' ? id : `${platform}::${id}`;
+// AIHub publishes OpenAI ids bare and namespaces every other platform. Cards and
+// group listings sometimes carry that namespace too, so strip it first: adding it
+// twice would produce an id no descriptor can parse back.
+export const publicModelId = (platform, id) => {
+  const bare = bareModelId(id);
+  return platform === 'openai' ? bare : `${platform}::${bare}`;
+};
 // Magpie renders `platform::model` as `platform:model` in its provider dialog and
 // may forward either shape back, so accept both and keep the bare model id.
 export const splitModelId = value => {

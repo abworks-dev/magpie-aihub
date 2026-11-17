@@ -513,6 +513,19 @@ export class Router {
       return errorResponse(signal.aborted ? 'AIHub routing deadline exceeded' : 'AIHub catalogue unavailable or no usable route');
     } finally { clearTimeout(budgetTimer); unlock(); }
   }
+  // One line per changed result: tells the operator how many ids each platform
+  // actually contributed, which is the fastest way to see a platform filtered out.
+  noteDiscovery(ids) {
+    const counts = new Map();
+    for (const id of ids) {
+      const platform = splitModelId(id)[0] ?? 'openai';
+      counts.set(platform, (counts.get(platform) ?? 0) + 1);
+    }
+    const summary = [...counts].sort().map(([platform, count]) => `${platform} ${count}`).join(', ');
+    if (summary === this.discoverySummary) return;
+    this.discoverySummary = summary;
+    console.error(`[aihub-auto] discovery: ${summary || 'no models'}`);
+  }
   async discover(signal) {
     // Discovery never prepares keys or probes inference. Manual imports retain
     // their existing key-backed discovery behavior and need no management login.
@@ -524,6 +537,7 @@ export class Router {
         if (!this.o.platforms.includes(platform)) continue;
         for (const id of await this.account.modelIds(key, this.o, signal)) ids.add(publicModelId(platform, id));
       }
+      this.noteDiscovery(ids);
       return [...ids].sort();
     }
     this.prune();
@@ -557,6 +571,7 @@ export class Router {
       }
     }
     if (!evidence) throw new Error('AIHub model discovery has no supported model IDs in the eligible catalogue or readable dedicated keys; configure explicit model IDs or check catalogue access.');
+    this.noteDiscovery(ids);
     return [...ids].sort();
   }
 }

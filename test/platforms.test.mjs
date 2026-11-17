@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PLATFORMS, modelDescriptor } from '../src/platforms.mjs';
+import { PLATFORMS, modelDescriptor, publicModelId } from '../src/platforms.mjs';
 import { configModels, manualBundle, ORIGIN, settings } from '../src/config.mjs';
 import { Router } from '../src/router.mjs';
 import { Account } from '../src/account.mjs';
@@ -182,6 +182,13 @@ test('read-only managed discovery namespaces all six platforms without touching 
   assert.equal(saves, 0);
   assert.equal(preparations, 0);
   assert.equal(fetches, 0);
+});
+
+test('namespacing a model id twice still yields one parseable id', () => {
+  assert.equal(publicModelId('zhipu', 'zhipu::glm-5.2'), 'zhipu::glm-5.2');
+  assert.equal(publicModelId('deepseek', 'deepseek:deepseek-flash'), 'deepseek::deepseek-flash');
+  assert.equal(publicModelId('openai', 'openai::gpt-5.6'), 'gpt-5.6');
+  assert.deepEqual(modelDescriptor(publicModelId('kimi', 'kimi-k3')), { id: 'kimi::kimi-k3', modelId: 'kimi-k3', platform: 'kimi', api: 'responses' });
 });
 
 test('a one-colon namespace and a bare id resolve to the same platform/model pair', () => {
