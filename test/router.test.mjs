@@ -531,18 +531,23 @@ test('a group is matched by the hall model cards when the account sets no restri
   assert.equal(calls[0].group, 2, 'the hall cards decide which group serves the model');
 });
 
-test('an existing group key is reused before a new pool slot is spent', async () => {
-  const rows = [candidate(1, { multiplier: 0.1 }), candidate(2, { multiplier: 0.05 })];
-  const seen = [];
-  const account = {
-    data: { mode: 'managed', keys: [{ groupId: 1, key: 'own-1' }] },
-    catalogue: async () => rows,
-    keyFor: async c => ({ groupId: c.groupId, key: `own-${c.groupId}` }),
-    modelIds: async () => [model],
+test('an existing group key wins inside the reuse bias and loses outside it', async () => {
+  const run = async (keyed, fresh, bias = 0.25) => {
+    const rows = [candidate(1, { multiplier: keyed }), candidate(2, { multiplier: fresh })];
+    const seen = [];
+    const account = {
+      data: { mode: 'managed', keys: [{ groupId: 1, key: 'own-1' }] },
+      catalogue: async () => rows,
+      keyFor: async c => ({ groupId: c.groupId, key: `own-${c.groupId}` }),
+      modelIds: async () => [model],
+    };
+    const router = new Router(account, settings({ reuseBias: bias }), { fetcher: async (_url, init) => { seen.push(init.headers.get('authorization')); return new Response('ok'); } });
+    await consume(router, request());
+    return seen[0];
   };
-  const router = new Router(account, settings({}), { fetcher: async (_url, init) => { seen.push(init.headers.get('authorization')); return new Response('ok'); } });
-  await consume(router, request());
-  assert.deepEqual(seen, ['Bearer own-1'], 'the keyed group wins even though another is cheaper');
+  assert.equal(await run(0.105, 0.1), 'Bearer own-1', 'a small premium is worth not minting another key');
+  assert.equal(await run(0.2, 0.1), 'Bearer own-2', 'a 100% premium is not: the fresh key wins');
+  assert.equal(await run(0.105, 0.1, 0), 'Bearer own-2', 'a zero bias means price only');
 });
 
 test('a per-platform quota stops a second key on the same platform', async () => {

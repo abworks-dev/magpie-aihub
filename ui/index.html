@@ -141,6 +141,11 @@
                   <small>插件创建的专用 Key 总数上限，1–32。</small>
                 </label>
                 <label class="field">
+                  <span class="field-label">复用溢价</span>
+                  <input id="reuseBias" name="reuseBias" type="number" min="0" max="5" step="0.05" value="0.25">
+                  <small>已有 Key 的分组贵不超过这个比例时优先复用，避免为省一点钱多建 Key；0 表示只看价格。</small>
+                </label>
+                <label class="field">
                   <span class="field-label">每平台 Key 配额</span>
                   <input id="keysPerPlatform" name="keysPerPlatform" type="number" min="0" max="32" step="1" value="0">
                   <small>每个平台最多占几把专用 Key，0 表示不限制；防止分组多的平台吃满候选池。</small>

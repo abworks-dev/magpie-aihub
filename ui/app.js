@@ -16,7 +16,7 @@
     strategy: 'balanced', maxMultiplier: 0.16, platformCaps: {}, maxAttempts: 3, poolSize: 4,
     dailyBudget: 0, priceAlertRatio: 0.2,
     excludedGroups: [], allowedGroups: [], requirePassed: false,
-    minBalance: 0, maxKeysPerAccount: 8, keysPerPlatform: 0, evictIdleKeys: false, evictIdleDays: 7,
+    minBalance: 0, maxKeysPerAccount: 8, keysPerPlatform: 0, reuseBias: 0.25, evictIdleKeys: false, evictIdleDays: 7,
     autoCreateKeys: false, bareModelIds: false, defaultApi: 'responses', models: [], monitorPort: 19871,
     platforms: [...platforms],
   };
@@ -111,6 +111,7 @@
     if (typeof raw.priceAlertRatio === 'number' && Number.isFinite(raw.priceAlertRatio) && raw.priceAlertRatio >= 0.01 && raw.priceAlertRatio <= 10) result.priceAlertRatio = raw.priceAlertRatio;
     if (validInteger(raw.maxKeysPerAccount, 1, 32)) result.maxKeysPerAccount = raw.maxKeysPerAccount;
     if (validInteger(raw.keysPerPlatform, 0, 32)) result.keysPerPlatform = raw.keysPerPlatform;
+    if (typeof raw.reuseBias === 'number' && Number.isFinite(raw.reuseBias) && raw.reuseBias >= 0 && raw.reuseBias <= 5) result.reuseBias = raw.reuseBias;
     if (validInteger(raw.evictIdleDays, 1, 90)) result.evictIdleDays = raw.evictIdleDays;
     for (const key of ['excludedGroups', 'allowedGroups']) if (groupList(raw[key])) result[key] = [...new Set(raw[key])];
     for (const key of ['requirePassed', 'autoCreateKeys', 'bareModelIds', 'evictIdleKeys']) if (typeof raw[key] === 'boolean') result[key] = raw[key];
@@ -124,7 +125,7 @@
 
   function populate(raw) {
     const options = safeOptions(raw);
-    for (const key of ['strategy', 'maxMultiplier', 'maxAttempts', 'poolSize', 'defaultApi', 'monitorPort', 'minBalance', 'maxKeysPerAccount', 'keysPerPlatform', 'evictIdleDays', 'dailyBudget', 'priceAlertRatio']) $(key).value = String(options[key]);
+    for (const key of ['strategy', 'maxMultiplier', 'maxAttempts', 'poolSize', 'defaultApi', 'monitorPort', 'minBalance', 'maxKeysPerAccount', 'keysPerPlatform', 'reuseBias', 'evictIdleDays', 'dailyBudget', 'priceAlertRatio']) $(key).value = String(options[key]);
     $('platformCaps').value = capsToText(options.platformCaps);
     for (const platform of platforms) $(`platform-${platform}`).checked = options.platforms.includes(platform);
     for (const key of ['excludedGroups', 'allowedGroups']) $(key).value = options[key].join(', ');
@@ -204,6 +205,7 @@
       minBalance: readNumber('minBalance', '余额阈值', 0, 100000, false),
       maxKeysPerAccount: readNumber('maxKeysPerAccount', '每账户 Key 上限', 1, 32),
       keysPerPlatform: readNumber('keysPerPlatform', '每平台 Key 配额', 0, 32),
+      reuseBias: readNumber('reuseBias', '复用溢价', 0, 5, false),
       evictIdleKeys: $('evictIdleKeys').checked,
       evictIdleDays: readNumber('evictIdleDays', '闲置天数', 1, 90),
       excludedGroups: readGroups('excludedGroups', '排除分组'),

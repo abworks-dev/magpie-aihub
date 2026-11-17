@@ -330,7 +330,12 @@ export class Router {
         }
       }
       if (!candidates.length) candidates = catalogue.filter(c => this.eligible(c, model, platform));
-      candidates.sort((a, b) => this.score(a) - this.score(b) || a.groupId - b.groupId);
+      // Reusing a group key avoids minting another credential, but not at any
+      // price: an unkeyed group must beat a keyed one by more than the bias.
+      const keyedGroups = new Set((this.account.data.keys ?? []).map(k => k.groupId));
+      const bias = Math.max(0, Number(this.o.reuseBias) || 0);
+      const weight = c => this.score(c) * (bias > 0 && !keyedGroups.has(c.groupId) ? 1 + bias : 1);
+      candidates.sort((a, b) => weight(a) - weight(b) || a.groupId - b.groupId);
       // A price-first route needs a real price. When AIHub returns none for any
       // group, fall back to the nominal multiplier ranking instead of failing.
       if (!candidates.length && this.o.strategy === 'price')
@@ -338,12 +343,8 @@ export class Router {
           .sort((a, b) => a.multiplier - b.multiplier || a.groupId - b.groupId);
       const sticky = session && this.sessions.get(session)?.groupId;
       if (sticky) candidates.sort((a, b) => Number(b.groupId === sticky) - Number(a.groupId === sticky));
-      // One group serves many models: reuse a group that already owns a key before
-      // spending a pool slot on another one, so probing a model list does not mint a
-      // key per model.
-      const keyedGroups = new Set((this.account.data.keys ?? []).map(k => k.groupId));
-      const reusable = candidates.filter(c => keyedGroups.has(c.groupId));
-      if (reusable.length) candidates = [...reusable, ...candidates.filter(c => !keyedGroups.has(c.groupId))];
+      // One group serves many models, so the ordering above already prefers a
+      // keyed group within the configured reuse bias instead of minting a key per model.
       // A per-platform quota keeps one vendor from eating every slot of a shared pool.
       if (this.o.keysPerPlatform > 0 && this.account.data.mode === 'managed') {
         const used = new Map();
