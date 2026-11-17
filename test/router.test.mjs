@@ -421,6 +421,17 @@ test("a group without a model list does not capture another platform's bare mode
   assert.equal(calls[0].group, 2, 'only the platform that lists the model is eligible');
 });
 
+test('a group is matched by the hall model cards when the account sets no restriction', async () => {
+  const rows = [
+    candidate(1, { platform: 'openai', multiplier: 0.05, advertisedModels: ['another-model'] }),
+    candidate(2, { platform: 'openai', multiplier: 0.06, advertisedModels: ['test-model'] }),
+  ];
+  const { router, calls } = fixture(rows, {}, { advertised: ['test-model'] });
+  const { response } = await consume(router, request());
+  assert.equal(response.status, 200);
+  assert.equal(calls[0].group, 2, 'the hall cards decide which group serves the model');
+});
+
 test('an existing group key is reused before a new pool slot is spent', async () => {
   const rows = [candidate(1, { multiplier: 0.1 }), candidate(2, { multiplier: 0.05 })];
   const seen = [];

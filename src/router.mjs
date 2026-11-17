@@ -122,6 +122,12 @@ export class Router {
   }
   // The same filters as eligibleGroup/eligible, one reason at a time: a failed
   // route should say what removed every group instead of returning a bare 503.
+  // Models a group actually serves: an account-side restriction wins, otherwise
+  // the hall's model cards describe it. An empty restriction means "nothing".
+  listedModels(c) {
+    if (Array.isArray(c.models)) return c.models;
+    return Array.isArray(c.advertisedModels) && c.advertisedModels.length ? c.advertisedModels : undefined;
+  }
   whyNot(c, model, platform, { requirePrice = false } = {}) {
     const o = this.o;
     const rowPlatform = c.platform ?? 'openai';
@@ -134,7 +140,8 @@ export class Router {
     if (o.requirePassed && c.passed !== true) return 'model check not passed';
     if ((this.cooldown.get(c.groupId) ?? 0) > this.now()) return 'cooling down';
     if (requirePrice && !this.priceKnown(c)) return 'no real price yet';
-    if (c.models && !c.models.some(id => bareModelId(id) === model)) return 'model not listed';
+    const listed = this.listedModels(c);
+    if (listed && !listed.some(id => bareModelId(id) === model)) return 'model not listed';
     if ((c.rejected ?? []).includes(model) || this.rejected.has(`${c.groupId}:${model}`)) return 'model rejected';
     return '';
   }
@@ -152,12 +159,13 @@ export class Router {
       .map(([why, n]) => why === 'over the multiplier cap' && cheapest !== null
         ? `${why} ×${n} (cheapest rejected ×${Number(cheapest).toFixed(3)})`
         : `${why} ×${n}`).join(', ');
-    const unmatched = rows.filter(c => c.models?.some(id => bareModelId(id) === model)).length;
+    const unmatched = rows.filter(c => this.listedModels(c)?.some(id => bareModelId(id) === model) ?? false).length;
     return `No eligible AIHub route remains within the configured multiplier and attempt limits (platform ${platform}, cap ×${Number(cap).toFixed(3)}, ${rows.length} groups, ${unmatched} list this model: ${top || 'all filtered by platform'})`;
   }
   eligible(c, model, platform = c.platform ?? 'openai', { requirePrice = this.o.strategy === 'price', strict = false } = {}) {
+    const listed = this.listedModels(c);
     return (c.platform ?? 'openai') === platform && this.eligibleGroup(c) && (!requirePrice || this.priceKnown(c)) &&
-      (strict ? (c.models?.some(id => bareModelId(id) === model) ?? false) : (!c.models || c.models.some(id => bareModelId(id) === model))) &&
+      (!listed ? strict !== true : listed.some(id => bareModelId(id) === model)) &&
       !(c.rejected ?? []).includes(model) && !this.rejected.has(`${c.groupId}:${model}`);
   }
   score(c) {
@@ -264,7 +272,7 @@ export class Router {
         for (const requirePrice of [true, false]) {
           for (const platformId of this.o.platforms) {
             const rows = catalogue.filter(c => (c.platform ?? 'openai') === platformId &&
-              (c.models?.some(id => bareModelId(id) === model) ?? false) &&
+              (this.listedModels(c)?.some(id => bareModelId(id) === model) ?? false) &&
               this.eligible(c, model, platformId, { requirePrice }));
             if (!rows.length) continue;
             platform = platformId;
