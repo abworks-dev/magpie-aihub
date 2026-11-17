@@ -151,14 +151,21 @@ export class Router {
     let cards = 0;
     for (const c of catalogue) {
       const platformId = c.platform ?? 'openai';
-      const bucket = byPlatform.get(platformId) ?? { groups: 0, listed: 0 };
+      const bucket = byPlatform.get(platformId) ?? { groups: 0, listed: 0, eligible: 0, cheapest: null };
       bucket.groups += 1;
       const listed = this.listedModels(c);
       if (listed && listed.length) cards += 1;
-      if (listed?.some(id => bareModelId(id) === model)) bucket.listed += 1;
+      if (listed?.some(id => bareModelId(id) === model)) {
+        bucket.listed += 1;
+        if (bucket.cheapest === null || c.multiplier < bucket.cheapest) bucket.cheapest = c.multiplier;
+        if (this.eligibleGroup(c)) bucket.eligible += 1;
+      }
       byPlatform.set(platformId, bucket);
     }
-    const parts = [...byPlatform].map(([platformId, bucket]) => `${platformId} ${bucket.listed}/${bucket.groups}`).join(', ');
+    const parts = [...byPlatform].map(([platformId, bucket]) => {
+      const cheapest = bucket.cheapest === null ? '' : `, cheapest ×${Number(bucket.cheapest).toFixed(3)}`;
+      return `${platformId} (cap ×${Number(this.capFor(platformId)).toFixed(3)}) ${bucket.listed}/${bucket.groups} listed, ${bucket.eligible} eligible${cheapest}`;
+    }).join('; ');
     return `enabled ${this.o.platforms.join('/')}; ${parts}; ${cards} groups publish model cards`;
   }
   routeFailure(rows, model, platform, catalogue = rows) {
