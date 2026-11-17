@@ -78,7 +78,7 @@
 
   function safeOptions(raw) {
     const result = { ...defaults };
-    if (['economy', 'balanced', 'speed'].includes(raw.strategy)) result.strategy = raw.strategy;
+    if (['economy', 'balanced', 'speed', 'price'].includes(raw.strategy)) result.strategy = raw.strategy;
     if (typeof raw.maxMultiplier === 'number' && Number.isFinite(raw.maxMultiplier) && raw.maxMultiplier >= 0 && raw.maxMultiplier <= 100) result.maxMultiplier = raw.maxMultiplier;
     if (validInteger(raw.maxAttempts, 1, 5)) result.maxAttempts = raw.maxAttempts;
     if (validInteger(raw.poolSize, 1, 8)) result.poolSize = raw.poolSize;
@@ -158,7 +158,7 @@
 
   function readForm() {
     if (typeof form.querySelectorAll === 'function') form.querySelectorAll('[aria-invalid]').forEach(field => field.removeAttribute('aria-invalid'));
-    if (!['economy', 'balanced', 'speed'].includes($('strategy').value)) invalid('strategy', '请选择有效的路由策略。');
+    if (!['economy', 'balanced', 'speed', 'price'].includes($('strategy').value)) invalid('strategy', '请选择有效的路由策略。');
     if (!['responses', 'chat'].includes($('defaultApi').value)) invalid('defaultApi', '请选择有效的默认 API。');
     const enabledPlatforms = platforms.filter(platform => $(`platform-${platform}`).checked);
     if (!enabledPlatforms.length) invalid('platform-openai', '请至少选择一个平台。');

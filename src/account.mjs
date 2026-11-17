@@ -87,6 +87,13 @@ export class Account {
       }),
     ]);
     if (!rates || typeof rates !== 'object' || Array.isArray(rates)) throw new Error('Unsupported AIHub account rates schema');
+    const probe = list(groups).find(row => row?.range_cache?.ready === true);
+    if (probe && !this.rangeFieldsLogged) {
+      this.rangeFieldsLogged = true;
+      // Field names only: tells us where AIHub keeps the real price without
+      // logging any value from the account directory.
+      console.error('[aihub-auto] range_cache fields: ' + Object.keys(probe.range_cache ?? {}).join(','));
+    }
     const hall = normalizeHall(publicRows);
     const inventory = list(groups).map(g => groupInventory(g, rates, hall)).filter(Boolean);
     this.directoryRows = inventory;

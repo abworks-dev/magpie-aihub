@@ -56,14 +56,19 @@ export class Router {
       c.multiplier <= o.maxMultiplier && c.available !== false && !c.blocked &&
       (!o.requirePassed || c.passed === true) && (this.cooldown.get(c.groupId) ?? 0) <= this.now();
   }
-  eligible(c, model, platform = c.platform ?? 'openai') {
-    return (c.platform ?? 'openai') === platform && this.eligibleGroup(c) && (!c.models || c.models.includes(model)) &&
+  priceKnown(c) {
+    return Number.isFinite(c.metrics?.realPrice) && c.metrics.realPrice > 0;
+  }
+  eligible(c, model, platform = c.platform ?? 'openai', { requirePrice = this.o.strategy === 'price' } = {}) {
+    return (c.platform ?? 'openai') === platform && this.eligibleGroup(c) && (!requirePrice || this.priceKnown(c)) &&
+      (!c.models || c.models.includes(model)) &&
       !(c.rejected ?? []).includes(model) && !this.rejected.has(`${c.groupId}:${model}`);
   }
   score(c) {
     const ms = this.latency.get(c.groupId) ?? c.latency ?? 30000;
     if (this.o.strategy === 'speed') return ms;
     if (this.o.strategy === 'economy') return c.multiplier;
+    if (this.o.strategy === 'price') return this.priceKnown(c) ? c.metrics.realPrice : Infinity;
     return c.multiplier * (1 + Math.min(ms, 60000) / 10000);
   }
   prune() {
@@ -138,6 +143,11 @@ export class Router {
       this.prune();
       const catalogue = await this.account.catalogue(this.o, signal);
       let candidates = catalogue.filter(c => this.eligible(c, model, platform)).sort((a, b) => this.score(a) - this.score(b) || a.groupId - b.groupId);
+      // A price-first route needs a real price. When AIHub returns none for any
+      // group, fall back to the nominal multiplier ranking instead of failing.
+      if (!candidates.length && this.o.strategy === 'price')
+        candidates = catalogue.filter(c => this.eligible(c, model, platform, { requirePrice: false }))
+          .sort((a, b) => a.multiplier - b.multiplier || a.groupId - b.groupId);
       const sticky = session && this.sessions.get(session)?.groupId;
       if (sticky) candidates.sort((a, b) => Number(b.groupId === sticky) - Number(a.groupId === sticky));
       // A full managed pool does not create/delete keys just because market rankings move.

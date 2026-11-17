@@ -46,6 +46,16 @@ test('same session remains sticky when observed speed rankings change; a new ses
   assert.deepEqual(calls.map(c => c.group), [1, 1, 2]);
 });
 
+test('price strategy prefers the lowest real price and falls back to the multiplier without one', async () => {
+  const priced = fixture([candidate(1, { metrics: { realPrice: 0.9 } }), candidate(2, { metrics: { realPrice: 0.2 } })], { strategy: 'price' });
+  await consume(priced.router, request());
+  assert.equal(priced.calls[0].group, 2, 'the cheaper real price wins over the nominal multiplier');
+
+  const bare = fixture([candidate(1, { multiplier: 0.2 }), candidate(2, { multiplier: 0.1 })], { strategy: 'price' });
+  await consume(bare.router, request());
+  assert.equal(bare.calls[0].group, 2, 'no real price falls back to the nominal multiplier');
+});
+
 test('429 fails over and excludes the failed route until Retry-After expires', async t => {
   for (const format of ['seconds', 'http-date']) {
     await t.test(format, async () => {
