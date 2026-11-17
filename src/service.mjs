@@ -240,7 +240,7 @@ export function serviceHandler({ port, getSnapshot, getIdentities, getMetrics, p
       }
       if (pruning) {
         const cors = { 'Access-Control-Allow-Origin': 'null', Vary: 'Origin' };
-        if (req.method === 'OPTIONS') return send(204, '', undefined, { ...cors, 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': TOKEN_HEADER });
+        if (req.method === 'OPTIONS') return send(204, '', undefined, { ...cors, 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': `content-type, ${TOKEN_HEADER}`, 'Access-Control-Max-Age': '600' });
         if (req.method !== 'POST') return error(405, 'METHOD_REJECTED', 'The cleanup takes only POST.', { ...cors, Allow: 'POST, OPTIONS' });
         if (!sameToken(req.headers[TOKEN_HEADER])) return error(403, 'TOKEN_REJECTED', 'Reload the page to obtain its snapshot token.', cors);
         const raw = await new Promise(resolve => {

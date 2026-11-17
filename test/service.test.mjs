@@ -275,6 +275,10 @@ test('the cleanup endpoint needs the page token and forwards the dry-run flag', 
   assert.deepEqual(seen, [{ apply: true }]);
   await call(handler({ prune }), { method: 'POST', path: '/prune', headers: { ...AUTH, 'content-type': 'application/json', origin: 'null' }, body: '{}' });
   assert.deepEqual(seen.at(-1), { apply: false }, 'a plain POST without the flag stays a dry run');
+  const preflight = await call(handler({ prune }), { method: 'OPTIONS', path: '/prune', headers: { origin: 'null', 'access-control-request-method': 'POST', 'access-control-request-headers': 'content-type, x-aihub-service-token' } });
+  assert.equal(preflight.status, 204, 'the browser may ask for the POST');
+  assert.match(preflight.headers['access-control-allow-headers'], /content-type/, 'a JSON body needs content-type on the preflight');
+  assert.match(preflight.headers['access-control-allow-headers'], /x-aihub-service-token/, 'the page token header stays allowed');
 });
 
 test('a port the previous process is still releasing is retried instead of failing', async () => {
