@@ -258,14 +258,19 @@ export class Router {
       let candidates = catalogue.filter(c => this.eligible(c, model, platform)).sort((a, b) => this.score(a) - this.score(b) || a.groupId - b.groupId);
       // Magpie may forward the model without its namespace; when the bare id only
       // exists under another platform, follow the id instead of failing the call.
+      // Try priced groups first, then unpriced ones: a platform whose groups have no
+      // price window yet must not disappear just because the strategy prefers prices.
       if (!candidates.length) {
-        for (const platformId of this.o.platforms) {
-          if (platformId === platform) continue;
-          const rows = catalogue.filter(c => this.eligible(c, model, platformId));
-          if (!rows.length) continue;
-          platform = platformId;
-          candidates = rows.sort((a, b) => this.score(a) - this.score(b) || a.groupId - b.groupId);
-          break;
+        for (const requirePrice of [true, false]) {
+          for (const platformId of this.o.platforms) {
+            if (platformId === platform) continue;
+            const rows = catalogue.filter(c => this.eligible(c, model, platformId, { requirePrice }));
+            if (!rows.length) continue;
+            platform = platformId;
+            candidates = rows.sort((a, b) => this.score(a) - this.score(b) || a.groupId - b.groupId);
+            break;
+          }
+          if (candidates.length) break;
         }
       }
       // A price-first route needs a real price. When AIHub returns none for any

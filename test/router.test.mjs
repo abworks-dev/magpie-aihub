@@ -424,3 +424,11 @@ test('a group that advertises namespaced ids still matches the bare model', asyn
   assert.equal(response.status, 200);
   assert.equal(calls[0].group, 1);
 });
+
+test('a bare model id follows the group list even when the price window is missing', async () => {
+  const rows = [candidate(1, { platform: 'deepseek', models: ['deepseek-flash'], multiplier: 0.5 })];
+  const { router, calls } = fixture(rows, { strategy: 'price', platformCaps: { deepseek: 2 } }, { advertised: ['deepseek::deepseek-flash'] });
+  const { response } = await consume(router, request({ model: 'deepseek-flash' }));
+  assert.equal(response.status, 200);
+  assert.equal(calls[0].group, 1);
+});
