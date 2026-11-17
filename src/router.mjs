@@ -154,7 +154,7 @@ export class Router {
     let cards = 0;
     for (const c of catalogue) {
       const platformId = c.platform ?? 'openai';
-      const bucket = byPlatform.get(platformId) ?? { groups: 0, listed: 0, eligible: 0, cheapest: null };
+      const bucket = byPlatform.get(platformId) ?? { groups: 0, listed: 0, eligible: 0, cheapest: null, reasons: new Map() };
       bucket.groups += 1;
       const listed = this.listedModels(c);
       if (listed && listed.length) cards += 1;
@@ -162,12 +162,17 @@ export class Router {
         bucket.listed += 1;
         if (bucket.cheapest === null || c.multiplier < bucket.cheapest) bucket.cheapest = c.multiplier;
         if (this.eligibleGroup(c)) bucket.eligible += 1;
+        const why = this.whyNot(c, model, platformId);
+        if (why) bucket.reasons.set(why, (bucket.reasons.get(why) ?? 0) + 1);
       }
       byPlatform.set(platformId, bucket);
     }
     const parts = [...byPlatform].map(([platformId, bucket]) => {
       const cheapest = bucket.cheapest === null ? '' : `, cheapest ×${Number(bucket.cheapest).toFixed(3)}`;
-      return `${platformId} (cap ×${Number(this.capFor(platformId)).toFixed(3)}) ${bucket.listed}/${bucket.groups} listed, ${bucket.eligible} eligible${cheapest}`;
+      const why = bucket.eligible === 0 && bucket.reasons.size
+        ? ', ' + [...bucket.reasons].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([reason, n]) => `${reason} ×${n}`).join(', ')
+        : '';
+      return `${platformId} (cap ×${Number(this.capFor(platformId)).toFixed(3)}) ${bucket.listed}/${bucket.groups} listed, ${bucket.eligible} eligible${cheapest}${why}`;
     }).join('; ');
     return `enabled ${this.o.platforms.join('/')}; ${parts}; ${cards} groups publish model cards`;
   }
@@ -280,7 +285,7 @@ export class Router {
       if (typeof supplied !== 'string' || !supplied) throw new Error();
       const descriptor = modelDescriptor({ id: supplied, ...(hint ? { platform: hint } : native ? { platform: 'gemini' } : {}), api: native ? 'gemini' : url.pathname === '/v1/chat/completions' ? 'chat' : 'responses' });
       platform = descriptor.platform; model = descriptor.modelId;
-      bareModel = !hint && !native && splitModelId(supplied)[0] === undefined;
+      bareModel = !native && splitModelId(supplied)[0] === undefined && (!hint || this.o.bareModelIds);
       if (!validPlatform(platform) || !this.o.platforms.includes(platform) || (native && body.model !== undefined && body.model !== model)) throw new Error();
       if (!native) { body.model = model; bytes = Buffer.from(JSON.stringify(body)); }
     } catch { clearTimeout(budgetTimer); return errorResponse('Invalid or disabled platform/model/protocol combination', 400, 'invalid_platform_model'); }
@@ -303,8 +308,12 @@ export class Router {
       // The per-model header Magpie forwards names the platform that model was
       // published under. Treat it as a preference, not proof: a stale header must
       // not shadow the platform that actually lists the model today.
-      const inferable = bareModel || (Boolean(hint) && !native && splitModelId(supplied)[0] === undefined);
-      const order = hint && this.o.platforms.includes(hint) ? [hint, ...this.o.platforms.filter(item => item !== hint)] : this.o.platforms;
+      // With bare ids the per-model header is one we synthesized ourselves, so it
+      // says nothing about the platform: treating it as a preference would send
+      // every bare name to openai first.
+      const trusted = this.o.bareModelIds ? '' : hint;
+      const inferable = bareModel || (Boolean(trusted) && !native && splitModelId(supplied)[0] === undefined);
+      const order = trusted && this.o.platforms.includes(trusted) ? [trusted, ...this.o.platforms.filter(item => item !== trusted)] : this.o.platforms;
       let candidates = [];
       if (inferable) {
         for (const requirePrice of [true, false]) {

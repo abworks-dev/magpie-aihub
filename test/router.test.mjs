@@ -465,6 +465,17 @@ test('a bare model id finds the platform that publishes it', async () => {
   assert.equal(calls[0].group, 1);
 });
 
+test('a synthesized platform header does not jump the configured platform order', async () => {
+  const rows = [
+    candidate(1, { platform: 'openai', models: ['shared-model'], multiplier: 0.05 }),
+    candidate(2, { platform: 'gemini', models: ['shared-model'], multiplier: 0.5 }),
+  ];
+  const { router, calls } = fixture(rows, { bareModelIds: true, platformCaps: { openai: 0.16, gemini: 2 } }, { advertised: ['shared-model'] });
+  const { response, text } = await consume(router, request({ model: 'shared-model' }, { 'x-aihub-auto-platform': 'gemini' }));
+  assert.equal(response.status, 200, text);
+  assert.equal(calls[0].group, 1, 'the platform order decides, not a header we made up for a bare id');
+});
+
 test("a group without a model list does not capture another platform's bare model", async () => {
   const rows = [
     candidate(1, { platform: 'openai', multiplier: 0.02 }),
