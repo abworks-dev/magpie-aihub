@@ -35,6 +35,7 @@
 | 其他 URL / query / 方法 | 无入口 | 拒绝 | 拒绝 | [Router](../src/router.mjs)：固定 origin、精确路径；仅原生 Gemini 流式可选 alt=sse |
 | 监控 GET /snapshot | 服务页面读取 | 读已导入目录/状态 | 可按需远端 GET 目录，可能刷新/保存令牌 | [快照](../src/telemetry.mjs)、[页面服务](../src/service.mjs)：不推理、不建 Key；无原始 auth/body/session |
 | 余额读取 GET /auth/me、/usage/stats、/platform-quotas | 服务页面读取 | 已登录账户令牌 | GET，失败沿用旧快照或安全 code | [余额](../src/billing.mjs)：不读 /api/v1/keys 明文 Key，不参与路由排序 |
+| 用量卡片 `auth.usage`（宿主「用量 → 概览」） | 宿主定时读取 | 同余额的三个 GET，60 秒缓存 | 只读，导入 Key 模式不外呼 | [用量卡片](../src/usage.mjs)：不发推理、不建 Key、不读 Key 列表 |
 
 ## 凭据与请求隔离
 

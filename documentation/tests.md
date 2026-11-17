@@ -1,5 +1,14 @@
 # 测试覆盖与验收记录
 
+## v0.7.1 用量卡片（Magpie auth.usage）
+
+2026-11-18 05:50 +08，本地 Windows / Node 对本版执行 `node --test`：275 项通过，失败、取消、跳过均为 0；`npm run check`（含新增 `src/usage.mjs`）exit 0。新增 `src/usage.mjs` 与 `test/usage.test.mjs`，覆盖两类证据：
+
+- 纯函数：账户模式把两个平台公布的 daily/weekly/monthly 限额与用量分别求和为「今日/本周/本月」三行（`amount`/`limit`/`unit: "USD"`，`used` 保留一位小数）；只公布用量的平台既不进分子也不进分母；有限额而用量缺失时 `used` 为 0（宿主画 0%，不会落到「未报告」）；超支保留 >100%；没有任何平台限额时退回「本次运行」文本行，设置 `dailyBudget` 时改为「今日预算」；读失败按 `billing_sign_in_required` 等映射为中文原因并保留本地计数；导入 Key 模式根本不调用 `billingInfo`。
+- 端到端：用合成 fetch 从 `entry.server({client:{}}) → hooks.auth.usage(...)` 走真实钩子，断言宿主会看到且只会看到 `/api/v1/auth/me`、`/api/v1/usage/stats`、`/api/v1/user/platform-quotas` 三个 GET（Bearer 令牌、15 秒超时沿用 `api.mjs`），并核对卡片内容。
+
+**未在生产 Magpie 上验证**：本版是否出现在「用量 → 概览」需先把已装插件更新到含该钩子的提交（宿主按 `auth.usage` 函数存在与否决定是否显示卡片），再用真实账户读取一次余额与配额；合成测试不能代替这一步。
+
 ## 当前证据
 
 2026-11-17 19:20 +08，本地 Windows / Node 24.22.1 对 v0.3.1 执行 `node --test`：192 项测试通过，失败、取消、跳过均为 0（含嵌套计数）。路由与账号测试使用模拟 fetch、模拟宿主和内存流；页面服务测试启动真实回环 HTTP 服务并提供合成快照。不含真实凭据或付费模型调用。`npm run check` 对入口、服务端模块与 UI 脚本逐个做语法检查，exit 0。`npm pack --dry-run` 包含 24 个预期文件、109.3 kB，未包含测试凭据或隔离宿主目录。

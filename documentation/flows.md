@@ -77,10 +77,10 @@ Key 准备失败立即停止当前路由，返回 error.type=aihub_routing_error
 
 设置与监控共用一份页面。Magpie 的静态页只能经 bridge；监控标签在 `magpie web` 下导航到 page.service 代理路径（或直接由该服务提供同一文档），桌面版不代理，页面提示在本机打开 `http://127.0.0.1:<monitorPort>`。`monitorPort=19871` 仅为默认候选，尚未生产分配。
 
-服务只监听 127.0.0.1，仅接受 GET/HEAD，要求精确 Host、Origin 缺省或 `null`、无 body；`/snapshot` 还需要服务注入页面的进程级 token，并以 `Access-Control-Allow-Origin: null` 允许不透明来源的沙箱页面读取。Cloud 仅批准四个静态资源，未批准 service 新路由；opc-agent 生产私有路径拒绝不可绕过。
+服务只监听 127.0.0.1，仅接受 GET/HEAD，要求精确 Host、Origin 缺省或 `null`、无 body；`/snapshot` 还需要服务注入页面的进程级 token，并以 `Access-Control-Allow-Origin: null` 允许不透明来源的沙箱页面读取。Cloud 入口自 2026-11-18 起按扩展名放行插件页面静态文件（`icon.svg`、`panels.js`、`servicebar.js`、`data.js` 等），仍未批准 `_magpie/service/` 路由；opc-agent 生产私有路径拒绝不可绕过。
 
 快照读取最多 32 个内存运行时，读取目录可触发远端 GET、令牌刷新与保存；不调用 keyFor 或任何推理。返回白名单分组状态/筛选原因、指标、目录新鲜度、Key 计数与最近 100 条路由，缺失指标 null；不返回认证、Key、Cookie、body 或原始 session。进程退出即失去记录，不是持久审计。
 
-账户模式额外返回余额卡：可用/冻结余额、累计请求与消耗、六平台日/月限额与用量，来自 `/api/v1/auth/me`、`/api/v1/usage/stats`、`/api/v1/user/platform-quotas`，默认 60 秒缓存（`balanceRefreshMs`）。读取失败时沿用最多 10 分钟的旧快照，否则显示安全 code；余额只影响 `minBalance` 建 Key 门限，不参与路由排序。
+账户模式额外返回余额卡：可用/冻结余额、累计请求与消耗、六平台日/月限额与用量，来自 `/api/v1/auth/me`、`/api/v1/usage/stats`、`/api/v1/user/platform-quotas`，默认 60 秒缓存（`balanceRefreshMs`）。读取失败时沿用最多 10 分钟的旧快照，否则显示安全 code；余额只影响 `minBalance` 建 Key 门限，不参与路由排序。同一读数还以 `auth.usage` 交给宿主：[用量卡片](../src/usage.mjs) 在 Magpie「用量 → 概览」显示余额与今日/本周/本月平台预算，导入 Key 模式只显示插件自己的请求数与花费。
 
 证据：[快照](../src/telemetry.mjs)、[页面服务](../src/service.mjs)、[入口](../index.mjs)、[页面](../ui/app.js)。相关验证状态见 [测试覆盖映射](tests.md)。

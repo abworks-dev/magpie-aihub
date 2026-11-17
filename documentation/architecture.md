@@ -17,6 +17,7 @@ magpie-aihub 是 Magpie 的消费端供应商插件：用用户自己的 AIHub �
 | [代理](../src/proxy.mjs) | 从 `MAGPIE_*_PROXY` / `HTTP(S)_PROXY` 取代理地址，按 `NO_PROXY` 决定直连；API 与路由的 fetch 显式携带 |
 | [路由](../src/router.mjs) | 请求校验、同平台同模型筛组、会话亲和、有限重试、流转交；内存保存亲和/冷却/延迟/锁/最近结果 |
 | [余额](../src/billing.mjs) | 账户模式读取 /api/v1/auth/me、/api/v1/usage/stats、/api/v1/user/platform-quotas → 余额、消耗与平台限额；不读 Key 列表 |
+| [用量卡片](../src/usage.mjs) | Magpie 的 `auth.usage`：把余额与三档平台预算（今日/本周/本月）交宿主「用量 → 概览」，读失败给原因码；导入 Key 模式只报插件自己的路由计数 |
 | [密钥错误](../src/errors.mjs) | Key 准备稳定错误码与安全消息，不透出原始管理响应 |
 | [快照](../src/telemetry.mjs) | 目录与进程状态 → 白名单监控数据；可按需刷新目录，不推理、不建 Key |
 | [页面服务](../src/service.mjs) | 固定在 127.0.0.1 的 HTTP 服务：提供同一份页面与 GET /snapshot，注入进程级页面令牌，检查 Host / Origin / 方法 / body 并脱敏；GET /identity 仅在页面令牌下按需返回完整账号标识，快照内只保留 `ab***@host` 形状 |
@@ -42,11 +43,11 @@ magpie-aihub 是 Magpie 的消费端供应商插件：用用户自己的 AIHub �
 
 服务只监听 127.0.0.1，仅接受 GET/HEAD，要求精确 Host、Origin 缺省或 `null`、无请求体；`/snapshot` 还需要服务注入到页面 `<meta>` 的进程级令牌（`x-aihub-service-token`），响应带 `Access-Control-Allow-Origin: null`，因此沙箱页面可读而其他站点/第三方框架不可读。捷径：服务在 web 代理下被沙箱化，无法保证同源。
 
-账户模式的快照还带余额卡：`/api/v1/auth/me` 的可用/冻结余额与充值总额、`/api/v1/usage/stats` 的累计请求与消耗、`/api/v1/user/platform-quotas` 的六平台日/月限额与用量，按 60 秒缓存读取；读取失败时沿用最多 10 分钟的旧快照，否则显示 `billing_unavailable` / `billing_access_denied` / `billing_sign_in_required` / `billing_session_expired`。余额只用于展示与 `minBalance` 建 Key 门限，不参与路由排序；`/api/v1/keys` 返回明文 Key，插件只在恢复本实例创建的 Key 时读取该列表，不做批量导出、不记录明文。
+账户模式的快照还带余额卡：`/api/v1/auth/me` 的可用/冻结余额与充值总额、`/api/v1/usage/stats` 的累计请求与消耗、`/api/v1/user/platform-quotas` 的六平台日/月限额与用量，按 60 秒缓存读取；读取失败时沿用最多 10 分钟的旧快照，否则显示 `billing_unavailable` / `billing_access_denied` / `billing_sign_in_required` / `billing_session_expired`。余额只用于展示与 `minBalance` 建 Key 门限，不参与路由排序；`/api/v1/keys` 返回明文 Key，插件只在恢复本实例创建的 Key 时读取该列表，不做批量导出、不记录明文。同一份读数还经 [用量卡片](../src/usage.mjs) 交给 Magpie 的 `auth.usage`，宿主「用量 → 概览」因此有本账户的卡片：余额、今日/本周/本月预算（平台公布限额之和），没有 AIHub 会话的导入 Key 模式只报插件自己的请求数与花费。
 
 快照经过字段白名单、数量/大小限制和脱敏，不返回原始 auth、请求 body、session ID 或管理响应。最近路由最多 100 条，仅进程内存；缺失/未就绪指标为 null，不能当成零或健康证据。
 
-“只读”指没有推理探测或建 Key：读取可能调用远端目录 GET，也可能因管理认证到期刷新令牌并保存。非可路由分组可出现在监控库存，标注排除原因，不意味着参与路由。监控不是持久审计日志。Cloud 目前仅批准四个静态资源，未批准 service 新路由；生产 opc-agent 私有路径拒绝不可绕过，不能把 Edge 合成代理通过写成生产可用。
+“只读”指没有推理探测或建 Key：读取可能调用远端目录 GET，也可能因管理认证到期刷新令牌并保存。非可路由分组可出现在监控库存，标注排除原因，不意味着参与路由。监控不是持久审计日志。Cloud 入口自 2026-11-18 起按扩展名放行插件页面静态文件（单层 `*.js` / `*.css` / `*.svg` / `*.png` 等与 `_magpie/bridge.js`），仍未批准 `_magpie/service/` 路由；生产 opc-agent 私有路径拒绝不可绕过，不能把 Edge 合成代理通过写成生产可用。
 
 ## 已知约束与风险
 

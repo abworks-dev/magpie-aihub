@@ -6,6 +6,7 @@ import { Router } from './src/router.mjs';
 import { modelDescriptor, protocolBase, protocolNpm } from './src/platforms.mjs';
 import { startService } from './src/service.mjs';
 import { monitorSnapshot } from './src/telemetry.mjs';
+import { usageCard } from './src/usage.mjs';
 import { adoptRuntime } from './src/runtime.mjs';
 
 /**
@@ -103,6 +104,13 @@ async function AIHubPlugin({ client }, initialOptions = {}) {
     },
     auth: {
       provider: PROVIDER,
+      // Magpie's Usage page reads each account's allowance through this hook
+      // (magpie's own; OpenCode ignores it): the wallet balance and the three
+      // platform budgets AIHub publishes for the account.
+      usage: async (getAuth, provider, scope = {}) => {
+        const auth = await getAuth();
+        return usageCard(runtime(auth, getAuth), options, { signal: scope?.signal });
+      },
       methods: [
         {
           type: 'api', keyless: true, label: '导入分组 Key（无需账号密码）',
