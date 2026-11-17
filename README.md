@@ -129,6 +129,10 @@ Key 准备失败返回稳定的 `error.code` 和脱敏信息，停止本次请�
 - 请求头按白名单重建；Bearer 分组 Key 或原生 Gemini 的 `x-goog-api-key` 仅在服务端注入，不转发客户端 Cookie、Magpie API Key 或管理令牌。
 - 没有后台付费探测、外发遥测或自动计划任务；目录按需刷新，回环页面服务只提供只读视图。
 
+## 出网代理
+
+Magpie 把宿主代理以 `MAGPIE_HTTPS_PROXY` / `MAGPIE_HTTP_PROXY` / `MAGPIE_ALL_PROXY`（及对应小写形式和 `MAGPIE_NO_PROXY`）传给插件进程，普通 `HTTPS_PROXY` 并不保证存在。Bun 的 `fetch` 不会自己读取环境变量，所以插件的每个出站请求都显式带上 `proxy`：取值顺序 `MAGPIE_HTTPS_PROXY → HTTPS_PROXY → MAGPIE_ALL_PROXY → ALL_PROXY`，命中 `NO_PROXY` 时直连；未配置代理时行为不变（直连）。这解决的是容器直连 `aihub.top` 被投毒解析、连接被重置这类环境问题，不改变任何接口语义。
+
 ## 开发与验证
 
 ```sh

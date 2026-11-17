@@ -1,5 +1,6 @@
 import { ORIGIN } from './config.mjs';
 import { validPlatform } from './platforms.mjs';
+import { proxyFor } from './proxy.mjs';
 
 export class ApiError extends Error {
   constructor(status, path) {
@@ -12,10 +13,14 @@ export async function api(path, { token, body, signal, headers = {}, fetcher = g
   const requestHeaders = new Headers({ accept: 'application/json', ...headers });
   if (token) requestHeaders.set('authorization', `Bearer ${token}`);
   if (body !== undefined) requestHeaders.set('content-type', 'application/json');
-  const res = await fetcher(`${ORIGIN}${path}`, {
+  const url = `${ORIGIN}${path}`;
+  // Bun's fetch does not read the proxy from the environment on its own.
+  const proxy = proxyFor(url);
+  const res = await fetcher(url, {
     method: body === undefined ? 'GET' : 'POST', headers: requestHeaders,
     body: body === undefined ? undefined : JSON.stringify(body), redirect: 'error',
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
+    ...(proxy ? { proxy } : {}),
   });
   if (!res.ok) { await res.body?.cancel(); throw new ApiError(res.status, path); }
   let data;

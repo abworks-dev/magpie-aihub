@@ -18,7 +18,7 @@
   ],
   "scripts": {
     "test": "node --test",
-    "check": "node --check index.mjs && node --check src/config.mjs && node --check src/api.mjs && node --check src/account.mjs && node --check src/billing.mjs && node --check src/async.mjs && node --check src/router.mjs && node --check src/platforms.mjs && node --check src/errors.mjs && node --check src/telemetry.mjs && node --check src/runtime.mjs && node --check src/service.mjs && node --check ui/app.js"
+    "check": "node --check index.mjs && node --check src/config.mjs && node --check src/api.mjs && node --check src/account.mjs && node --check src/billing.mjs && node --check src/async.mjs && node --check src/router.mjs && node --check src/platforms.mjs && node --check src/errors.mjs && node --check src/telemetry.mjs && node --check src/runtime.mjs && node --check src/proxy.mjs && node --check src/service.mjs && node --check ui/app.js"
   },
   "engines": {
     "node": ">=22"

@@ -13,6 +13,7 @@ magpie-aihub 是 Magpie 的消费端供应商插件：用用户自己的 AIHub �
 | [平台](../src/platforms.mjs) | 六平台标识、`platform::model` 命名空间、模型描述与协议/SDK/API base 映射 |
 | [账户](../src/account.mjs) | 读取目录、刷新登录令牌、发现模型、恢复或创建专用 Key；受 maxKeysPerAccount 与 minBalance 约束，记录内存级 Key 事件；变化经 Magpie client.auth.set 保存 |
 | [API 适配](../src/api.mjs) | 固定 AIHub origin 的 GET / POST；15 秒超时、拒绝重定向；六平台目录与指标归一化 |
+| [代理](../src/proxy.mjs) | 从 `MAGPIE_*_PROXY` / `HTTP(S)_PROXY` 取代理地址，按 `NO_PROXY` 决定直连；API 与路由的 fetch 显式携带 |
 | [路由](../src/router.mjs) | 请求校验、同平台同模型筛组、会话亲和、有限重试、流转交；内存保存亲和/冷却/延迟/锁/最近结果 |
 | [余额](../src/billing.mjs) | 账户模式读取 /api/v1/auth/me、/api/v1/usage/stats、/api/v1/user/platform-quotas → 余额、消耗与平台限额；不读 Key 列表 |
 | [密钥错误](../src/errors.mjs) | Key 准备稳定错误码与安全消息，不透出原始管理响应 |

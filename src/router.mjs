@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { ORIGIN } from './config.mjs';
 import { validPlatform, publicModelId, modelDescriptor } from './platforms.mjs';
 import { keyFailure } from './errors.mjs';
+import { proxyFor } from './proxy.mjs';
 
 const digest = text => createHash('sha256').update(text).digest('hex');
 const errorResponse = (message, status = 503, code = 'routing_failed') => Response.json({ error: { type: 'aihub_routing_error', code, message } }, { status });
@@ -174,7 +175,9 @@ export class Router {
         const began = this.now();
         let response, reader;
         try {
-          response = await this.fetcher(`${ORIGIN}${url.pathname}${url.search}`, { method: 'POST', headers, body: bytes, signal: attemptSignal, redirect: 'error' });
+          const target = `${ORIGIN}${url.pathname}${url.search}`;
+          const proxy = proxyFor(target);
+          response = await this.fetcher(target, { method: 'POST', headers, body: bytes, signal: attemptSignal, redirect: 'error', ...(proxy ? { proxy } : {}) });
           if (!response.ok) {
             this.recordRoute(candidate, model, `http_${response.status}`);
             clearTimeout(timer);
