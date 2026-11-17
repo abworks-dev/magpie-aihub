@@ -13,13 +13,16 @@ import { adoptRuntime } from './src/runtime.mjs';
  * is the default: the page asks with apply:true only after the user confirms.
  */
 async function pruneIdleKeys(runtimes, apply) {
-  const result = { apply, candidates: [], deleted: 0, failed: [] };
+  const result = { apply, candidates: [], deleted: 0, stale: 0, failed: [] };
   for (const item of runtimes.values()) {
     const account = item?.account;
     if (!account || account.data?.mode !== 'managed') continue;
     let remote;
     try { remote = await account.ownRemoteKeys(); }
     catch (error) { result.failed.push({ step: 'list', message: String(error?.message ?? error) }); continue; }
+    // Drop local records whose key no longer exists in AIHub before judging what is idle.
+    try { result.stale += await account.reconcileKeys(remote); }
+    catch (error) { result.failed.push({ step: 'reconcile', message: String(error?.message ?? error) }); }
     const inUse = new Set((account.data.keys ?? []).map(key => Number(key?.groupId)).filter(Number.isFinite));
     for (const key of remote) {
       const name = String(key?.name ?? '');

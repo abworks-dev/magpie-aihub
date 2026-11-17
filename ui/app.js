@@ -602,11 +602,15 @@
       if (!apply) {
         const candidates = data.candidates?.length ?? 0;
         pruneArmed = candidates > 0;
-        $('monitor-updated').textContent = candidates > 0 ? `发现 ${candidates} 把闲置 Key，再点一次确认清理` : '没有闲置 Key';
+        const stale = data.stale ?? 0;
+        $('monitor-updated').textContent = candidates > 0
+          ? `发现 ${candidates} 把闲置 Key${stale ? `，并清理了 ${stale} 条失效记录` : ''}，再点一次确认清理`
+          : (stale ? `已清理 ${stale} 条失效记录，没有闲置 Key` : '没有闲置 Key');
       } else {
         pruneArmed = false;
         const failed = data.failed?.length ?? 0;
-        $('monitor-updated').textContent = `已清理 ${data.deleted ?? 0} 把闲置 Key${failed ? `，${failed} 把失败` : ''}`;
+        const stale = data.stale ?? 0;
+        $('monitor-updated').textContent = `已清理 ${data.deleted ?? 0} 把闲置 Key${stale ? `，并清理 ${stale} 条失效记录` : ''}${failed ? `，${failed} 把失败` : ''}`;
         await loadSnapshot();
       }
     } catch (error) {

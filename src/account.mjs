@@ -109,6 +109,23 @@ export class Account {
     }
     throw new Error('AIHub key list exceeds supported pagination limit');
   }
+  /**
+   * AIHub stays the source of truth for the key count: a key deleted from the
+   * console must not keep occupying a slot in the local pool. Pass rows when the
+   * caller already listed them.
+   */
+  async reconcileKeys(rows, signal) {
+    if (this.data.mode !== 'managed' || this.data.keys.length === 0) return 0;
+    const remote = rows ?? await this.ownRemoteKeys(signal);
+    const alive = new Set(remote.filter(row => row && row.status === 'active' && row.id !== undefined).map(row => String(row.id)));
+    const kept = this.data.keys.filter(entry => entry.remoteId === undefined || alive.has(String(entry.remoteId)));
+    const removed = this.data.keys.length - kept.length;
+    if (removed === 0) return 0;
+    this.data.keys = kept;
+    await this.save();
+    this.note('reconciled', 0, `removed_${removed}`);
+    return removed;
+  }
   /** Delete one key this plugin created; the caller decides which ones qualify. */
   async deleteRemoteKey(id, signal) {
     return api(`/api/v1/keys/${encodeURIComponent(String(id))}`, { method: 'DELETE', token: this.data.access, fetcher: this.fetcher, signal });
@@ -143,8 +160,12 @@ export class Account {
       // routing knob, not a key budget, so it must not stop a model the account
       // is still willing to key.
       if (this.data.keys.length >= o.maxKeysPerAccount) {
-        this.note('blocked', candidate.groupId, 'key_cap_reached');
-        throw new KeyError('key_cap_reached', `专用 Key 数量已达上限 ${o.maxKeysPerAccount}，请增大「每账户 Key 上限」或复用已有分组。`);
+        // Keys deleted in the AIHub console must stop counting before we refuse.
+        const dropped = await this.reconcileKeys(undefined, signal).catch(() => 0);
+        if (this.data.keys.length >= o.maxKeysPerAccount) {
+          this.note('blocked', candidate.groupId, 'key_cap_reached');
+          throw new KeyError('key_cap_reached', `专用 Key 数量已达上限 ${o.maxKeysPerAccount}（已在 AIHub 核对，其中 ${this.data.keys.length} 把仍有效${dropped ? `，清理了 ${dropped} 条失效记录` : ''}），请增大「每账户 Key 上限」或复用已有分组。`);
+        }
       }
       if (o.minBalance > 0) {
         const billing = await this.billingInfo(o, signal);

@@ -348,7 +348,10 @@ test('the per-account Key cap blocks a new group before any key POST', async () 
   let posts = 0;
   const account = new Account(managed({ keys: [{ groupId: 7, platform: 'openai', key: 'existing', remoteId: 1, name: 'existing', owned: true }] }), {
     save: async () => {},
-    fetcher: async (_url, init) => { if (init.method === 'POST') posts++; return json([]); },
+    fetcher: async (_url, init) => {
+      if (init.method === 'POST') posts++;
+      return json([{ id: 1, status: 'active', group_id: 7, name: 'existing' }]);
+    },
   });
   await assert.rejects(account.keyFor(group, options({ maxKeysPerAccount: 1 })), error => error.code === 'key_cap_reached');
   assert.equal(posts, 0);
@@ -443,7 +446,30 @@ test('the candidate pool size no longer caps the number of group keys', async ()
 test('the per-account key limit is the one that stops a new key', async () => {
   const account = new Account(managed({ keys: [{ groupId: 42, platform: 'openai', key: 'k', remoteId: 1, owned: true }] }), {
     save: async () => {},
-    fetcher: async () => json([]),
+    fetcher: async () => json([{ id: 1, status: 'active', group_id: 42, name: 'magpie-aihub-test-instance-1234567890-g42' }]),
   });
   await assert.rejects(account.keyFor({ ...group, groupId: 43 }, options({ poolSize: 32, maxKeysPerAccount: 1 })), { code: 'key_cap_reached' });
+});
+
+test('a key deleted in the console stops counting against the account limit', async () => {
+  const account = new Account(managed({ keys: [{ groupId: 41, platform: 'openai', key: 'gone', remoteId: 999, owned: true }] }), {
+    save: async () => {},
+    fetcher: async (_url, init) => {
+      if (init.method === 'GET') return json([{ id: 555, status: 'active', group_id: 7, name: 'someone-else' }]);
+      const body = JSON.parse(init.body);
+      return json({ id: 300, key: 'fresh', group_id: body.group_id, name: body.name });
+    },
+  });
+  const key = await account.keyFor(group, options({ poolSize: 8, maxKeysPerAccount: 1 }));
+  assert.equal(key.key, 'fresh');
+  assert.equal(account.data.keys.length, 1);
+  assert.equal(account.data.keys[0].remoteId, 300);
+});
+
+test('the key limit still refuses when AIHub still lists the key', async () => {
+  const account = new Account(managed({ keys: [{ groupId: 41, platform: 'openai', key: 'k', remoteId: 999, owned: true }] }), {
+    save: async () => {},
+    fetcher: async () => json([{ id: 999, status: 'active', group_id: 41, name: 'magpie-aihub-test-instance-1234567890-g41' }]),
+  });
+  await assert.rejects(account.keyFor(group, options({ maxKeysPerAccount: 1 })), { code: 'key_cap_reached' });
 });
