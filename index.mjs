@@ -6,10 +6,12 @@ import { Router } from './src/router.mjs';
 import { modelDescriptor, protocolBase, protocolNpm } from './src/platforms.mjs';
 import { startService } from './src/service.mjs';
 import { monitorSnapshot } from './src/telemetry.mjs';
+import { adoptRuntime } from './src/runtime.mjs';
 
 async function AIHubPlugin({ client }, initialOptions = {}) {
   const options = settings(initialOptions);
   const runtimes = new Map();
+  let lastDiscoveryError = '';
   // One listener per plugin factory, never per account: it is the page itself
   // (settings and the read-only monitor in one document). A busy port must not
   // break the provider; Magpie then shows its own retry notice for the page.
@@ -24,6 +26,10 @@ async function AIHubPlugin({ client }, initialOptions = {}) {
     if (!data?.instanceId) throw new Error('Unsupported AIHub authentication data');
     let item = runtimes.get(data.instanceId);
     if (!item) {
+      // A fresh sign-in is a new instance of the same person: retire the previous
+      // one so the monitor cannot list a dead account, and keep its keys so the
+      // replacement does not create a second set for the same groups.
+      data = adoptRuntime(runtimes, data);
       if (runtimes.size >= 32) throw new Error('Too many active AIHub plugin accounts; reload the plugin host');
       item = { getCurrentAuth };
       const account = new Account(data, { save: accountSaver(client, () => {
@@ -98,10 +104,16 @@ async function AIHubPlugin({ client }, initialOptions = {}) {
           .catch(error => {
             // A dead session must not blank the provider catalogue: keep the models
             // Magpie already knows so the connection stays selectable and retryable.
-            console.error(`[aihub-auto] model discovery unavailable: ${error?.message ?? error ?? 'unknown error'}`);
+            // One repeated failure should not flood the host log on every refresh.
+            const detail = String(error?.message ?? error ?? 'unknown error');
+            if (detail !== lastDiscoveryError) {
+              lastDiscoveryError = detail;
+              console.error(`[aihub-auto] model discovery unavailable: ${detail}`);
+            }
             return null;
           });
         if (!ids) return provider?.models ?? {};
+        lastDiscoveryError = '';
         return Object.fromEntries(ids.map(id => {
           const descriptor = modelDescriptor(id, id.startsWith('gemini::') ? 'responses' : options.defaultApi);
           return [id, {

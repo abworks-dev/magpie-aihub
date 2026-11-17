@@ -361,7 +361,9 @@
       if (!billing) {
         const why = account.billingError ? '余额读取失败：' + escapeHtml(billingLabels[account.billingError] ?? account.billingError)
           : account.mode === 'manual' ? '手工 Key 模式不读取账户余额' : '余额尚未读取';
-        return '<article class="account-card">' + head + '<p class="account-empty">' + why + '</p></article>';
+        const dead = account.billingError === 'billing_session_expired' || account.billingError === 'billing_sign_in_required';
+        const hint = dead ? '<p class="account-empty">在 Magpie「供应商 → AIHub Auto」里重新登录，回到本页点「刷新」。</p>' : '';
+        return '<article class="account-card">' + head + '<p class="account-empty">' + why + '</p>' + hint + '</article>';
       }
       const platforms = Array.isArray(billing.platforms) ? billing.platforms : [];
       const total = pick => platforms.reduce((sum, item) => sum + (num(item?.[pick]) ?? 0), 0);

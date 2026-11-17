@@ -8,7 +8,7 @@ magpie-aihub 是 Magpie 的消费端供应商插件：用用户自己的 AIHub �
 
 | 模块 | 输入 → 输出 / 状态 |
 | --- | --- |
-| [入口](../index.mjs) | 注册 config、auth、provider.models、chat.headers 钩子并启动页面服务；按认证包 instanceId 缓存 Account / Router，最多 32 实例 |
+| [入口](../index.mjs) | 注册 config、auth、provider.models、chat.headers 钩子并启动页面服务；按认证包 instanceId 缓存 Account / Router，最多 32 实例；重新登录时退掉旧实例；同一身份的 Key 交给新实例沿用，换账户不沿用 |
 | [配置](../src/config.mjs) | 校验非敏感 options、平台与协议；解析手工 Key JSON；生成宿主模型配置 |
 | [平台](../src/platforms.mjs) | 六平台标识、`platform::model` 命名空间、模型描述与协议/SDK/API base 映射 |
 | [账户](../src/account.mjs) | 读取目录、刷新登录令牌、发现模型、恢复或创建专用 Key；受 maxKeysPerAccount 与 minBalance 约束，记录内存级 Key 事件；变化经 Magpie client.auth.set 保存 |
