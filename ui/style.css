@@ -288,3 +288,34 @@ fieldset:disabled { opacity: .6; }
   .picker-list { grid-template-columns: 1fr; max-height: 260px; }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ---- interaction states and contrast fixes (unslop audit) --------------- */
+.btn { transition: background-color .12s ease, border-color .12s ease, transform .06s ease; }
+.btn:hover:not(:disabled) { border-color: var(--line-strong); background: var(--surface-2); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+.btn-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 86%, var(--fg)); border-color: transparent; }
+.tab:hover { color: var(--fg); }
+.tab:active { transform: translateY(1px); }
+.chip:hover { border-color: var(--line-strong); }
+.pick:active { transform: translateY(1px); }
+input:hover, select:hover, textarea:hover { border-color: var(--line-strong); }
+input:disabled, select:disabled, textarea:disabled { opacity: .6; cursor: not-allowed; }
+.btn:focus-visible, .tab:focus-visible, .chip:focus-visible, .pick:focus-visible,
+input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+.switch input:checked + .switch-track::after { background: var(--bg); }
+.pill-off { color: color-mix(in srgb, var(--fg) 76%, var(--bg)); }
+.dirty-badge { color: color-mix(in srgb, var(--warn) 82%, var(--fg)); }
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: var(--magpie-fg, #e8edf0);
+    --bg: var(--magpie-bg, #15191c);
+    --accent: var(--magpie-accent, #63b59a);
+    --ok: #4cc38d;
+    --warn: #d9a545;
+    --err: #e48075;
+  }
+}
