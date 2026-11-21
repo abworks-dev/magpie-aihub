@@ -136,7 +136,12 @@
     for (const key of ['requirePassed', 'autoCreateKeys', 'bareModelIds', 'evictIdleKeys']) $(key).checked = options[key];
     $('models').value = options.models.map(model => {
       const { id } = modelIdentity(model);
-      return model.api ? `${id}|${model.api}` : id;
+      const limit = validInteger(model.context, 1, Number.MAX_SAFE_INTEGER);
+      const parts = [id];
+      if (model.api) parts.push(model.api);
+      if (limit) parts.push(String(model.context));
+      if (limit && validInteger(model.output, 1, Number.MAX_SAFE_INTEGER)) parts.push(String(model.output));
+      return parts.join('|');
     }).join('\n');
     renderGroupPicker();
   }
@@ -270,19 +275,43 @@
     const seen = new Set();
     return lines.map((line, index) => {
       const parts = line.split('|').map(part => part.trim());
-      const [inputId, api] = parts;
+      const [inputId, ...extra] = parts;
       let identity;
       try { identity = modelIdentity(inputId); }
       catch { invalid('models', `第 ${index + 1} 个模型 ID 或平台前缀无效。`); }
+      let api;
+      let context;
+      let output;
+      for (const token of extra) {
+        if (['responses', 'chat', 'gemini'].includes(token)) {
+          if (api) invalid('models', `第 ${index + 1} 个模型重复写了协议。`);
+          api = token;
+          continue;
+        }
+        const value = Number(token);
+        if (!token || !Number.isSafeInteger(value) || value < 1) {
+          invalid('models', `第 ${index + 1} 个模型的上下文参数无效：行尾可依次写 |协议、|context、|output，数字需为正整数。`);
+        }
+        if (context === undefined) context = value;
+        else if (output === undefined) output = value;
+        else invalid('models', `第 ${index + 1} 个模型最多带 context 与 output 两个数字。`);
+      }
       const protocol = api ?? $('defaultApi').value;
-      if (parts.length > 2 || !['responses', 'chat', 'gemini'].includes(protocol)
+      if (!['responses', 'chat', 'gemini'].includes(protocol)
         || (protocol === 'gemini' && identity.platform !== 'gemini') || (identity.platform === 'gemini' && protocol === 'chat')) {
         invalid('models', `第 ${index + 1} 个模型协议无效：Gemini 使用 responses 或 gemini，其他平台使用 responses 或 chat。`);
+      }
+      if (context !== undefined && output !== undefined && output > context) {
+        invalid('models', `第 ${index + 1} 个模型的输出上限不能大于上下文窗口。`);
       }
       const { id } = identity;
       if (seen.has(id)) invalid('models', `第 ${index + 1} 个模型 ID 重复，请保留一项。`);
       seen.add(id);
-      return api ? { id, api } : { id };
+      const model = { id };
+      if (api) model.api = api;
+      if (context !== undefined) model.context = context;
+      if (output !== undefined) model.output = output;
+      return model;
     });
   }
 

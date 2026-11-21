@@ -207,8 +207,8 @@
               </div>
               <label class="field field-wide">
                 <span class="field-label">模型列表 <span class="optional">可选，每行一个</span></span>
-                <textarea id="models" name="models" rows="6" spellcheck="false" autocomplete="off" placeholder="model-id|responses&#10;deepseek::deepseek-chat|chat&#10;gemini::gemini-2.5-pro|gemini" aria-describedby="models-help"></textarea>
-                <small id="models-help">OpenAI 直接写模型 ID；其他平台写 <code>platform::modelID</code>。行尾可加 <code>|responses</code>、<code>|chat</code>，Gemini 另外接受原生 <code>|gemini</code>。最多 200 个。留空时自动发现，不建 Key、不跑推理；故障切换保持平台与模型不变。</small>
+                <textarea id="models" name="models" rows="6" spellcheck="false" autocomplete="off" placeholder="model-id|responses&#10;deepseek::deepseek-chat|chat|128000|8192&#10;gemini::gemini-2.5-pro|gemini|1048576|65536" aria-describedby="models-help"></textarea>
+                <small id="models-help">OpenAI 直接写模型 ID；其他平台写 <code>platform::modelID</code>。行尾可加 <code>|responses</code>、<code>|chat</code>，Gemini 另外接受原生 <code>|gemini</code>；再往后依次是 <code>|context</code>、<code>|output</code>（正整数）。不写窗口大小时按平台和模型名取保守默认值（Gemini 1M、GPT-5 400k、GLM-4.5 200k 等），写了的以显式值为准。最多 200 个。留空时自动发现，不建 Key、不跑推理；故障切换保持平台与模型不变。</small>
               </label>
             </section>
 

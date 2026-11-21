@@ -25,7 +25,7 @@
 | priceAlertRatio | 0.2；0.01–10 有限数 | UI + Router | 真实价格相对上次观测的变化比例阈值，超出则记入监控「价格波动」；只提示，不参与路由 |
 | breakerWindowMs / breakerMinSamples / breakerFailureRate | 300000 / 5 / 0.5 | Router | 滑动窗口熔断参数：窗口内失败数 ≥ 样本下限且失败率 > 阈值才冷却分组 |
 | defaultApi | responses；responses / chat | UI + 入口 | 宿主默认适配协议，不转换请求语义；Gemini 不支持 chat，原生须逐模型选择 |
-| models | []；最多 200 项且公共 ID 唯一 | UI + 入口 | 字符串或 {id,platform?,api?,context?,output?}；原始 ID 1–160 个允许字符；非 OpenAI namespace 或显式 platform，二者须一致；api 为 responses / chat / gemini，Gemini 仅 responses / gemini，其余 responses / chat；context / output 正安全整数。显式配置优先，空列表发现，不证明推理可用 |
+| models | []；最多 200 项且公共 ID 唯一 | UI + 入口 | 字符串或 {id,platform?,api?,context?,output?}；原始 ID 1–160 个允许字符；非 OpenAI namespace 或显式 platform，二者须一致；api 为 responses / chat / gemini，Gemini 仅 responses / gemini，其余 responses / chat；context / output 正安全整数；未显式配置时按平台与模型名取保守默认值（Gemini 1M、GPT-5 400k、GLM-4.5+ 200k 等），显式值优先。空列表发现，不证明推理可用 |
 | monitorPort | 19871；整数 1024–65535 | UI + 入口 / page.service | 页面服务与只读监控的回环端口；仅默认候选，尚未生产分配或确认可用；需核对宿主端口与服务桥接 |
 | refreshMs | 60000；整数 10000–3600000ms | 服务端，UI 保留 | 目录 / 模型缓存新鲜期，惰性刷新，不是轮询 |
 | maxStaleMs | 600000；整数 10000–3600000ms | 服务端，UI 保留 | 刷新失败可用快照年龄，取消不回退，不保证状态有效 |
@@ -36,7 +36,7 @@
 | maxSessions | 5000；整数 1–50000 | 服务端，UI 保留 | 亲和条目上限，移除最早插入项 |
 | maxBodyBytes | 20971520；整数 1024–52428800 字节 | 服务端，UI 保留 | 首块前重试缓冲上限，请求历史留在进程内存 |
 
-模型编辑形式为 modelID 或 modelID|api，例如 deepseek::MODEL_ID|chat、gemini::MODEL_ID|gemini。OpenAI ID 保持原值；非 OpenAI 对外用 platform::model，上游前剥离命名空间。保存保留同 ID 已有合法 context / output；默认 context=128000、output=16384，动态模型也用这组占位值，cost=0 不构成免费声明。见 [模型](../src/config.mjs)、[发现](../index.mjs)、[UI](../ui/app.js)。
+模型编辑形式为 modelID 或 modelID|api，例如 deepseek::MODEL_ID|chat、gemini::MODEL_ID|gemini；行尾可再依次写 |context、|output（正整数，output 不得大于 context），例如 deepseek::MODEL_ID|chat|128000|8192。OpenAI ID 保持原值；非 OpenAI 对外用 platform::model，上游前剥离命名空间。保存保留同 ID 已有合法 context / output；未显式配置时按平台与模型名取保守默认值（见 [limits](../src/limits.mjs)，如 Gemini 1M、GPT-5 400k、GLM-4.5+ 200k），家族未知时回落到 context=128000、output=16384；动态发现模型也走同一张表。这些值是显示与预算用的占位猜测，不是厂商规格，路由不会按其截断请求；cost=0 不构成免费声明。见 [模型](../src/config.mjs)、[发现](../index.mjs)、[UI](../ui/app.js)。
 
 ## 认证包、敏感值与内存状态
 

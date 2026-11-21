@@ -77,7 +77,7 @@ test('the sandbox gets one declarative page without native forms', () => {
 test('settings load and save model IDs, CSV groups and recognized metadata only', async () => {
   const h = harness({ options: { models: [{ id: 'model-one', api: 'chat', context: 4096 }, { id: 'model-two', api: 'responses' }], refreshMs: 12345, accidentalSecret: 'must-not-persist' } });
   await settle();
-  assert.equal(h.node('models').value, 'model-one|chat\nmodel-two|responses');
+  assert.equal(h.node('models').value, 'model-one|chat|4096\nmodel-two|responses');
   assert.equal(h.node('controls').disabled, false);
   h.node('allowedGroups').value = '10, 20';
   h.node('maxMultiplier').value = '0';
@@ -129,7 +129,7 @@ test('six platforms, canonical model limits and the service port survive a save'
   const h = harness({ options: { platforms: ['gemini', 'deepseek'], monitorPort: 23123,
     models: [{ id: 'gemini-2.5-pro', platform: 'gemini', api: 'gemini', context: 100000, output: 8192 }] } });
   await settle();
-  assert.equal(h.node('models').value, 'gemini::gemini-2.5-pro|gemini');
+  assert.equal(h.node('models').value, 'gemini::gemini-2.5-pro|gemini|100000|8192');
   assert.equal(h.node('platform-openai').checked, false);
   assert.equal(h.node('monitorPort').value, '23123');
   h.node('models').value += '\ndeepseek::deepseek-chat|chat';
@@ -141,6 +141,24 @@ test('six platforms, canonical model limits and the service port survive a save'
   assert.equal(h.saved().models[0].context, 100000);
   assert.equal(h.saved().models[0].output, 8192);
   assert.equal(h.saved().models[1].id, 'deepseek::deepseek-chat');
+});
+
+test('model lines carry optional context and output limits', async () => {
+  const h = harness(); await settle();
+  h.node('models').value = 'deepseek::deepseek-chat|chat|128000|8192';
+  await h.clickSave();
+  assert.ok(h.saved(), h.node('status').textContent);
+  const saved = h.saved().models[0];
+  assert.equal(saved.id, 'deepseek::deepseek-chat');
+  assert.equal(saved.api, 'chat');
+  assert.equal(saved.context, 128000);
+  assert.equal(saved.output, 8192);
+
+  for (const value of ['deepseek::deepseek-chat|4096|8192', 'deepseek::deepseek-chat|chat|abc', 'deepseek::deepseek-chat|chat|1|2|3']) {
+    const bad = harness(); await settle(); bad.node('models').value = value;
+    await bad.clickSave(); assert.equal(bad.saved(), undefined, value);
+    assert.equal(bad.node('models').attrs['aria-invalid'], 'true');
+  }
 });
 
 test('cross-platform protocols and an empty platform selection are refused', async () => {

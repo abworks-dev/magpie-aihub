@@ -4,6 +4,7 @@ import { login } from './src/api.mjs';
 import { Account, accountSaver } from './src/account.mjs';
 import { Router } from './src/router.mjs';
 import { modelDescriptor, protocolBase, protocolNpm } from './src/platforms.mjs';
+import { defaultLimits } from './src/limits.mjs';
 import { startService } from './src/service.mjs';
 import { monitorSnapshot } from './src/telemetry.mjs';
 import { usageCard } from './src/usage.mjs';
@@ -174,10 +175,11 @@ async function AIHubPlugin({ client }, initialOptions = {}) {
         return Object.fromEntries(ids.map(id => {
           const descriptor = modelDescriptor(id, descriptorApi(id, options.defaultApi));
           const key = options.bareModelIds ? descriptor.modelId : id;
+          const guessed = defaultLimits(descriptor.platform, descriptor.modelId);
           return [key, {
           id: key, providerID: PROVIDER, name: key,
           api: { id: descriptor.modelId, url: protocolBase(descriptor.api), npm: protocolNpm(descriptor.api) },
-          limit: { context: 128000, output: 16384 },
+          limit: { context: guessed.context, output: guessed.output },
           capabilities: { reasoning: false, toolcall: true, attachment: false, input: { text: true, image: false }, output: { text: true } },
           cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
           variants: {}, headers: { 'x-aihub-auto-platform': descriptor.platform }, options: {}, release_date: '', status: 'active',

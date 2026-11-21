@@ -1,4 +1,5 @@
 import { PLATFORMS, validPlatform, modelDescriptor, protocolBase, protocolNpm } from './platforms.mjs';
+import { defaultLimits } from './limits.mjs';
 
 export const PROVIDER = 'aihub-auto';
 export const ORIGIN = 'https://aihub.top';
@@ -86,11 +87,14 @@ export function manualBundle(text) {
 }
 
 export function configModels(o) {
-  return Object.fromEntries(o.models.map(m => [m.id, {
-    id: m.modelId, name: m.id,
-    provider: { npm: protocolNpm(m.api), api: protocolBase(m.api) },
-    headers: { 'x-aihub-auto-platform': m.platform },
-    limit: { context: m.context ?? 128000, output: m.output ?? 16384 },
-    tool_call: true,
-  }]));
+  return Object.fromEntries(o.models.map(m => {
+    const guessed = defaultLimits(m.platform, m.modelId);
+    return [m.id, {
+      id: m.modelId, name: m.id,
+      provider: { npm: protocolNpm(m.api), api: protocolBase(m.api) },
+      headers: { 'x-aihub-auto-platform': m.platform },
+      limit: { context: m.context ?? guessed.context, output: m.output ?? guessed.output },
+      tool_call: true,
+    }];
+  }));
 }
