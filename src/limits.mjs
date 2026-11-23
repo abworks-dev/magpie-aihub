@@ -23,6 +23,7 @@ const RULES = {
     [/^gpt-5/, { context: 400_000, output: 128_000 }],
     [/^gpt-4\.1/, { context: 1_000_000, output: 32_768 }],
     [/^gpt-4o/, { context: 128_000, output: 16_384 }],
+    // o1 / o3 / o4 and their -mini variants share one window (o4-mini 200k/100k).
     [/^o[134](?:-|$)/, { context: 200_000, output: 100_000 }],
     [/^gpt-4-turbo/, { context: 128_000, output: 4_096 }],
   ],
@@ -31,16 +32,19 @@ const RULES = {
   ],
   zhipu: [
     [/^glm-(?:4\.5|4\.6|5)/, { context: 200_000, output: 128_000 }],
+    // GLM-4-Plus / Air / Flash keep the 128k window with a 4k answer cap.
     [/^glm-4/, { context: 128_000, output: 4_096 }],
   ],
   kimi: [
     [/^kimi-k2/, { context: 256_000, output: 32_768 }],
+    [/^kimi-latest/, { context: 128_000, output: 4_096 }],
     [/^moonshot-v1-128k/, { context: 128_000, output: 4_096 }],
     [/^moonshot-v1-32k/, { context: 32_000, output: 4_096 }],
     [/^moonshot-v1-8k/, { context: 8_000, output: 4_096 }],
   ],
   grok: [
     [/^grok-4/, { context: 256_000, output: 32_768 }],
+    [/^grok-3-mini/, { context: 131_072, output: 8_192 }],
     [/^grok-3/, { context: 131_072, output: 32_768 }],
     [/^grok-2/, { context: 131_072, output: 8_192 }],
   ],

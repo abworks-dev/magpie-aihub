@@ -9,10 +9,15 @@ test('defaultLimits guesses per platform family', () => {
   assert.deepEqual(defaultLimits('openai', 'gpt-5.1'), { context: 400_000, output: 128_000 });
   assert.deepEqual(defaultLimits('openai', 'gpt-4.1-mini'), { context: 1_000_000, output: 32_768 });
   assert.deepEqual(defaultLimits('openai', 'o3-mini'), { context: 200_000, output: 100_000 });
+  assert.deepEqual(defaultLimits('openai', 'o4-mini'), { context: 200_000, output: 100_000 });
   assert.deepEqual(defaultLimits('deepseek', 'deepseek-chat'), { context: 128_000, output: 64_000 });
   assert.deepEqual(defaultLimits('zhipu', 'glm-4.6'), { context: 200_000, output: 128_000 });
+  assert.deepEqual(defaultLimits('zhipu', 'glm-4-plus'), { context: 128_000, output: 4_096 });
   assert.deepEqual(defaultLimits('kimi', 'kimi-k2-0905-preview'), { context: 256_000, output: 32_768 });
+  assert.deepEqual(defaultLimits('kimi', 'kimi-latest'), { context: 128_000, output: 4_096 });
   assert.deepEqual(defaultLimits('grok', 'grok-4-fast'), { context: 256_000, output: 32_768 });
+  assert.deepEqual(defaultLimits('grok', 'grok-3-mini'), { context: 131_072, output: 8_192 });
+  assert.deepEqual(defaultLimits('grok', 'grok-3'), { context: 131_072, output: 32_768 });
 });
 
 test('defaultLimits falls back when the family is unknown', () => {
