@@ -28,7 +28,8 @@ const RULES = {
     [/^gpt-4-turbo/, { context: 128_000, output: 4_096 }],
   ],
   deepseek: [
-    [/^deepseek-(?:v3\.2|chat|reasoner)/, { context: 128_000, output: 64_000 }],
+    // v3.1 and v3.2 share the 128k window and the 64k answer cap.
+    [/^deepseek-(?:v3\.[12]|chat|reasoner)/, { context: 128_000, output: 64_000 }],
   ],
   zhipu: [
     [/^glm-(?:4\.5|4\.6|5)/, { context: 200_000, output: 128_000 }],

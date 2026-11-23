@@ -11,6 +11,8 @@ test('defaultLimits guesses per platform family', () => {
   assert.deepEqual(defaultLimits('openai', 'o3-mini'), { context: 200_000, output: 100_000 });
   assert.deepEqual(defaultLimits('openai', 'o4-mini'), { context: 200_000, output: 100_000 });
   assert.deepEqual(defaultLimits('deepseek', 'deepseek-chat'), { context: 128_000, output: 64_000 });
+  assert.deepEqual(defaultLimits('deepseek', 'deepseek-v3.1'), { context: 128_000, output: 64_000 });
+  assert.deepEqual(defaultLimits('deepseek', 'deepseek-v3.2'), { context: 128_000, output: 64_000 });
   assert.deepEqual(defaultLimits('zhipu', 'glm-4.6'), { context: 200_000, output: 128_000 });
   assert.deepEqual(defaultLimits('zhipu', 'glm-4-plus'), { context: 128_000, output: 4_096 });
   assert.deepEqual(defaultLimits('kimi', 'kimi-k2-0905-preview'), { context: 256_000, output: 32_768 });
