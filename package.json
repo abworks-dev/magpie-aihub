@@ -1,7 +1,7 @@
 {
   "name": "magpie-aihub",
   "version": "0.9.3",
-  "description": "Consumer AIHub group routing, session affinity and bounded failover for Magpie",
+  "description": "Magpie 的 AIHub 自动路由插件：按倍率与延迟选组，保持会话亲和，故障时在有界次数内切换。",
   "type": "module",
   "main": "./index.mjs",
   "exports": {
