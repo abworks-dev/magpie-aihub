@@ -45,6 +45,7 @@ test('balance picks among healthy endpoints only and honours the latency weight'
 
 test('only an edge response is worth another endpoint', () => {
   assert.equal(EndpointPool.isEdgeResponse(503, 'application/json'), false, 'AIHub JSON 503 is a backend answer');
+  assert.equal(EndpointPool.isEdgeResponse(503, 'text/plain; charset=utf-8'), false, 'a busy upstream answers 503 as text; another host would not help');
   assert.equal(EndpointPool.isEdgeResponse(429, 'application/json; charset=utf-8'), false);
   assert.equal(EndpointPool.isEdgeResponse(401, 'application/json'), false);
   assert.equal(EndpointPool.isEdgeResponse(502, 'text/html'), true, 'a gateway page is the edge');

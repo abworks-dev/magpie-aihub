@@ -483,10 +483,10 @@ export class Router {
         const payloadBytes = gemini ? JSON.stringify(toGeminiRequest(payload, inboundPath)) : bytes;
         const attempt = new AbortController();
         const attemptSignal = AbortSignal.any([signal, attempt.signal]);
-        const timer = setTimeout(() => attempt.abort(new Error('First-byte timeout')), this.o.firstByteTimeoutMs);
+        const timer = setTimeout(() => { timedOut = true; attempt.abort(new Error('First-byte timeout')); }, this.o.firstByteTimeoutMs);
         timer.unref?.();
         const began = this.now();
-        let response, reader, transportFailed = false;
+        let response, reader, transportFailed = false, timedOut = false;
         const release = this.acquireSlot(candidate.groupId);
         try {
           const proxy = proxyFor(target);
@@ -618,7 +618,9 @@ export class Router {
           if (signal.aborted) signal.throwIfAborted();
           // Transport errors (DNS, reset, TLS) are the edge's problem, not this
           // group's: try the next endpoint instead of burning the whole pool.
-          if (transportFailed && epIndex < epOrder.length - 1) { edgeFailure = true; break; }
+          // A first-byte timeout means this group is slow, not that the edge is
+          // dead: retrying the same group on another host would pay twice.
+          if (transportFailed && !timedOut && epIndex < epOrder.length - 1) { edgeFailure = true; break; }
           this.penalize(candidate.groupId);
           if (session) this.sessions.delete(session);
         } finally { clearTimeout(timer); release(); }

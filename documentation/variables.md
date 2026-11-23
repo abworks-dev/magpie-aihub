@@ -16,7 +16,7 @@
 | poolSize | 4；整数 1–32 | UI + Router | 一次路由最多依次尝试的候选分组数；不限制 Key 总数，池满不换/删 Key |
 | spread | off；off/p2c/weighted | UI + Router | 在最优附近的多组间分散请求，避免同一组被打热；会话粘性优先。默认关 |
 | maxInflightPerGroup | 0；整数 0–1000 | UI + Router | 同一分组同时等待首字节的请求数上限；0 不限 |
-| endpoints | 默认 [{url:https://aihub.top,label:默认}]；最多 8 个 | UI + Router + api | 入口主机列表；入站与出站都只接受列表内的 origin |
+| endpoints | 默认 [{url:https://aihub.top,label:默认},{url:https://aihub.dog,label:优化}]；最多 8 个 | UI + Router + api | 入口主机列表；入站与出站都只接受列表内的 origin |
 | endpointMode | failover；failover/sticky/balance | UI + Router | failover 只在边缘故障时换入口；balance 按延迟分流，需各入口同库 |
 | excludedGroups | []；正安全整数数组 | UI + Router | 排除优先 |
 | allowedGroups | []；正安全整数数组 | UI + Router | 空数组不额外限组，仍受其他筛选 |

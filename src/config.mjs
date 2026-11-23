@@ -1,6 +1,6 @@
 import { PLATFORMS, validPlatform, modelDescriptor, protocolBase, protocolNpm } from './platforms.mjs';
 import { defaultLimits } from './limits.mjs';
-import { parseEndpoints } from './endpoints.mjs';
+import { parseEndpoints, DEFAULT_ENDPOINTS } from './endpoints.mjs';
 
 export const PROVIDER = 'aihub-auto';
 export const ORIGIN = 'https://aihub.top';
@@ -14,7 +14,7 @@ const defaults = {
   maxSessions: 5000, maxBodyBytes: 20 * 1024 * 1024,
   breakerWindowMs: 300_000, breakerMinSamples: 5, breakerFailureRate: 0.5,
   dailyBudget: 0, priceAlertRatio: 0.2,
-  endpoints: [{ url: 'https://aihub.top', label: '默认' }], endpointMode: 'failover', endpointCooldownMs: 60_000,
+  endpoints: DEFAULT_ENDPOINTS.map(row => ({ ...row })), endpointMode: 'failover', endpointCooldownMs: 60_000,
   spread: 'off', spreadBand: 1.1, maxInflightPerGroup: 0,
   excludedGroups: [], allowedGroups: [], requirePassed: false,
   defaultApi: 'responses', models: [], autoCreateKeys: false, bareModelIds: false,

@@ -144,6 +144,13 @@ fieldset:disabled { opacity: .6; }
 .switch input:focus-visible + .switch-track { outline: 2px solid var(--accent); outline-offset: 2px; }
 .switch-text strong { display: block; font-size: 12.5px; font-weight: 500; }
 .switch-text small { margin-top: 2px; }
+/* lone boolean in the field grid: the same switch, left aligned */
+.field-switch { position: relative; cursor: pointer; }
+.field-switch > input[type="checkbox"] { position: absolute; opacity: 0; width: 0; height: 0; }
+.field-switch > .switch-track { flex: none; width: 34px; height: 20px; margin-top: 0; }
+.field-switch > input:checked + .switch-track { background: color-mix(in srgb, var(--accent) 78%, var(--bg)); border-color: var(--accent); }
+.field-switch > input:checked + .switch-track::after { transform: translateX(14px); background: var(--on-accent); }
+.field-switch > input:focus-visible + .switch-track { outline: 2px solid var(--accent); outline-offset: 2px; }
 .note { margin-top: 16px; padding: 12px; border-radius: var(--r-control); background: var(--surface); border: 1px solid var(--line); color: var(--muted); font-size: 11.5px; line-height: 1.6; }
 .note-warn { border-color: color-mix(in srgb, var(--warn) 34%, var(--line)); background: color-mix(in srgb, var(--warn) 6%, var(--surface)); }
 

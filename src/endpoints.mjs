@@ -4,7 +4,12 @@
 // dead edge (poisoned DNS, blocked host, gateway 502) does not take the whole
 // plugin down — including the balance card, which needs the console API too.
 
-export const DEFAULT_ENDPOINTS = Object.freeze([{ url: 'https://aihub.top', label: '默认' }]);
+// The two hosts AIHub publishes for one site. Both reach the same account, so
+// a stock install can already fail over without any setup.
+export const DEFAULT_ENDPOINTS = Object.freeze([
+  { url: 'https://aihub.top', label: '默认' },
+  { url: 'https://aihub.dog', label: '优化' },
+]);
 export const MAX_ENDPOINTS = 8;
 
 // A stored endpoint is an origin plus a short human label. Anything that does
@@ -114,6 +119,9 @@ export class EndpointPool {
   static isEdgeResponse(status, contentType) {
     const type = String(contentType ?? '').toLowerCase();
     if (type.includes('application/json')) return false;
-    return status === 502 || status === 503 || status === 504 || type.includes('text/html');
+    // An HTML page is a gateway speaking, whatever its status. A bare 502/504
+    // is also the edge; a plain-text 503 is left to the group, since a healthy
+    // but busy upstream answers that way and another host would not help.
+    return type.includes('text/html') || status === 502 || status === 504;
   }
 }
