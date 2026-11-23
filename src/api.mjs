@@ -2,6 +2,13 @@ import { ORIGIN } from './config.mjs';
 import { validPlatform } from './platforms.mjs';
 import { proxyFor } from './proxy.mjs';
 
+// Console calls (sign-in, balance, keys) use the same entry hosts as inference.
+// The plugin sets them once per settings load; a single host keeps today's shape.
+let origins = [ORIGIN];
+export function setOrigins(list) {
+  origins = Array.isArray(list) && list.length ? [...list] : [ORIGIN];
+}
+
 export class ApiError extends Error {
   constructor(status, path) {
     super(`AIHub API ${path.split('?')[0]} returned HTTP ${status}; check sign-in or site access.`);
@@ -9,26 +16,45 @@ export class ApiError extends Error {
   }
 }
 
-export async function api(path, { token, body, method, signal, headers = {}, fetcher = globalThis.fetch } = {}) {
+export async function api(path, { token, body, method, signal, headers = {}, fetcher = globalThis.fetch, hosts } = {}) {
   const requestHeaders = new Headers({ accept: 'application/json', ...headers });
   if (token) requestHeaders.set('authorization', `Bearer ${token}`);
   if (body !== undefined) requestHeaders.set('content-type', 'application/json');
-  const url = `${ORIGIN}${path}`;
-  // Bun's fetch does not read the proxy from the environment on its own.
-  const proxy = proxyFor(url);
-  const res = await fetcher(url, {
-    method: method ?? (body === undefined ? 'GET' : 'POST'), headers: requestHeaders,
-    body: body === undefined ? undefined : JSON.stringify(body), redirect: 'error',
-    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
-    ...(proxy ? { proxy } : {}),
-  });
-  if (!res.ok) { await res.body?.cancel(); throw new ApiError(res.status, path); }
-  // A delete may answer 204: no payload is not an error there.
-  if (res.status === 204 || res.headers.get('content-length') === '0') return undefined;
-  let data;
-  try { data = await res.json(); } catch { throw new Error(`AIHub API ${path.split('?')[0]} returned invalid JSON`); }
-  if (data && typeof data === 'object' && 'code' in data && String(data.code) !== '0') throw new ApiError(502, path);
-  return data?.data ?? data;
+  const targets = Array.isArray(hosts) && hosts.length ? hosts : origins;
+  let lastError;
+  for (const [index, origin] of targets.entries()) {
+    const url = `${origin}${path}`;
+    // Bun's fetch does not read the proxy from the environment on its own.
+    const proxy = proxyFor(url);
+    let res;
+    try {
+      res = await fetcher(url, {
+        method: method ?? (body === undefined ? 'GET' : 'POST'), headers: requestHeaders,
+        body: body === undefined ? undefined : JSON.stringify(body), redirect: 'error',
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
+        ...(proxy ? { proxy } : {}),
+      });
+    } catch (error) {
+      // A transport failure is the host's problem: another entry host may serve
+      // the same account. Only rethrow once every host has failed.
+      lastError = error;
+      if (index < targets.length - 1) continue;
+      throw error;
+    }
+    if (!res.ok) {
+      await res.body?.cancel();
+      lastError = new ApiError(res.status, path);
+      if ([502, 503, 504].includes(res.status) && index < targets.length - 1) continue;
+      throw lastError;
+    }
+    // A delete may answer 204: no payload is not an error there.
+    if (res.status === 204 || res.headers.get('content-length') === '0') return undefined;
+    let data;
+    try { data = await res.json(); } catch { throw new Error(`AIHub API ${path.split('?')[0]} returned invalid JSON`); }
+    if (data && typeof data === 'object' && 'code' in data && String(data.code) !== '0') throw new ApiError(502, path);
+    return data?.data ?? data;
+  }
+  throw lastError ?? new Error(`AIHub API ${path.split('?')[0]} is unreachable`);
 }
 
 export function list(data) {

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { ORIGIN } from './config.mjs';
+import { EndpointPool } from './endpoints.mjs';
 import { validPlatform, publicModelId, modelDescriptor, bareModelId, splitModelId } from './platforms.mjs';
 import { keyFailure } from './errors.mjs';
 import { proxyFor } from './proxy.mjs';
@@ -42,8 +43,12 @@ function retryDelay(value, now, fallback) {
 }
 
 export class Router {
-  constructor(account, options, { fetcher = globalThis.fetch, now = Date.now } = {}) {
-    this.account = account; this.o = options; this.fetcher = fetcher; this.now = now;
+  constructor(account, options, { fetcher = globalThis.fetch, now = Date.now, rng = Math.random } = {}) {
+    this.account = account; this.o = options; this.fetcher = fetcher; this.now = now; this.rng = rng;
+    // The entry host is chosen before the group: a dead edge must not blind the
+    // router, which is why endpoint health is tracked apart from group health.
+    this.endpoints = new EndpointPool(options.endpoints, { mode: options.endpointMode, cooldownMs: options.endpointCooldownMs, now });
+    this.inflight = new Map();
     this.sessions = new Map(); this.cooldown = new Map(); this.latency = new Map(); this.rejected = new Map();
     // What the eviction policy actually gave back, newest first; the page shows it.
     this.evictions = [];
@@ -112,7 +117,21 @@ export class Router {
     const o = this.o;
     return o.platforms.includes(c.platform ?? 'openai') && !o.excludedGroups.includes(c.groupId) && (!o.allowedGroups.length || o.allowedGroups.includes(c.groupId)) &&
       c.multiplier <= this.capFor(c.platform ?? 'openai') && c.available !== false && !c.blocked &&
-      (!o.requirePassed || c.passed === true) && (this.cooldown.get(c.groupId) ?? 0) <= this.now();
+      (!o.requirePassed || c.passed === true) && (this.cooldown.get(c.groupId) ?? 0) <= this.now() &&
+      !(this.o.maxInflightPerGroup > 0 && (this.inflight.get(c.groupId) ?? 0) >= this.o.maxInflightPerGroup);
+  }
+  // A slot is held only until the first byte: that is the wait a sibling request
+  // would queue behind, and it keeps long streams from starving a group forever.
+  acquireSlot(groupId) {
+    if (!(this.o.maxInflightPerGroup > 0)) return () => {};
+    this.inflight.set(groupId, (this.inflight.get(groupId) ?? 0) + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const left = (this.inflight.get(groupId) ?? 1) - 1;
+      if (left > 0) this.inflight.set(groupId, left); else this.inflight.delete(groupId);
+    };
   }
   // A platform cap overrides the global one, because the same nominal multiplier
   // means very different money depending on the vendor's base price.
@@ -251,7 +270,7 @@ export class Router {
     const url = new URL(request.url);
     const native = /^\/v1beta\/models\/([A-Za-z0-9_.@+-]{1,160}):(generateContent|streamGenerateContent)$/.exec(url.pathname);
     const validQuery = native?.[2] === 'streamGenerateContent' ? url.search === '?alt=sse' || !url.search : !url.search;
-    if (url.origin !== ORIGIN || !validQuery || (!native && !['/v1/responses', '/v1/chat/completions', '/v1/models'].includes(url.pathname)))
+    if (!this.endpoints.has(url.origin) || !validQuery || (!native && !['/v1/responses', '/v1/chat/completions', '/v1/models'].includes(url.pathname)))
       return errorResponse('Only supported AIHub inference and model-discovery endpoints are allowed', 400);
     if (url.pathname === '/v1/models') {
       if (request.method !== 'GET') return errorResponse('Method not allowed', 405);
@@ -336,12 +355,36 @@ export class Router {
       const bias = Math.max(0, Number(this.o.reuseBias) || 0);
       const weight = c => this.score(c) * (bias > 0 && !keyedGroups.has(c.groupId) ? 1 + bias : 1);
       candidates.sort((a, b) => weight(a) - weight(b) || a.groupId - b.groupId);
+      // Load spreading is opt-in and never overrides fairness: it only reorders
+      // within a band around the best candidate, so a much cheaper group still
+      // wins. Sticky sessions are re-sorted below, so a warm cache stays put.
+      if (this.o.spread !== 'off' && candidates.length > 2) {
+        const best = weight(candidates[0]);
+        const band = candidates.filter(c => weight(c) <= best * this.o.spreadBand).slice(0, 5);
+        if (band.length > 1) {
+          let chosen = band[0];
+          if (this.o.spread === 'p2c') {
+            const first = band[Math.floor(this.rng() * band.length)];
+            let second = band[Math.floor(this.rng() * band.length)];
+            if (second === first) second = band[(band.indexOf(first) + 1) % band.length];
+            chosen = weight(first) <= weight(second) ? first : second;
+          } else {
+            const share = c => 1 / Math.max(1e-9, weight(c));
+            const total = band.reduce((sum, c) => sum + share(c), 0);
+            let ticket = this.rng() * total;
+            chosen = band[band.length - 1];
+            for (const c of band) { ticket -= share(c); if (ticket <= 0) { chosen = c; break; } }
+          }
+          if (chosen !== candidates[0]) candidates = [chosen, ...candidates.filter(c => c !== chosen)];
+        }
+      }
       // A price-first route needs a real price. When AIHub returns none for any
       // group, fall back to the nominal multiplier ranking instead of failing.
       if (!candidates.length && this.o.strategy === 'price')
         candidates = catalogue.filter(c => this.eligible(c, model, platform, { requirePrice: false }))
           .sort((a, b) => a.multiplier - b.multiplier || a.groupId - b.groupId);
       const sticky = session && this.sessions.get(session)?.groupId;
+      const stickyEndpoint = session ? this.sessions.get(session)?.endpoint : undefined;
       if (sticky) candidates.sort((a, b) => Number(b.groupId === sticky) - Number(a.groupId === sticky));
       // One group serves many models, so the ordering above already prefers a
       // keyed group within the configured reuse bias instead of minting a key per model.
@@ -388,6 +431,12 @@ export class Router {
       try { payload = bytes?.length ? JSON.parse(bytes) : {}; } catch { payload = {}; }
       const streaming = payload?.stream === true;
       const inboundPath = url.pathname === '/v1/chat/completions' ? 'chat' : 'responses';
+      const epOrder = this.endpoints.order(stickyEndpoint);
+      let endpoint = epOrder[0];
+      let edgeFailure = false;
+      for (let epIndex = 0; epIndex < epOrder.length; epIndex++) {
+      endpoint = epOrder[epIndex];
+      edgeFailure = false;
       for (const [index, candidate] of candidates.entries()) {
         signal.throwIfAborted();
         if (attempts >= this.o.maxAttempts) break;
@@ -430,20 +479,27 @@ export class Router {
           : { 'content-type': 'application/json', ...(native ? { 'x-goog-api-key': key.key } : { authorization: `Bearer ${key.key}` }) });
         // Deliberate allowlist: never leak Magpie/client credentials, cookies or internal session IDs.
         if (!gemini) for (const name of ['accept', 'openai-beta']) if (request.headers.has(name)) headers.set(name, request.headers.get(name));
-        const target = gemini ? `${ORIGIN}${geminiPath(model, streaming)}` : `${ORIGIN}${url.pathname}${url.search}`;
+        const target = gemini ? `${endpoint}${geminiPath(model, streaming)}` : `${endpoint}${url.pathname}${url.search}`;
         const payloadBytes = gemini ? JSON.stringify(toGeminiRequest(payload, inboundPath)) : bytes;
         const attempt = new AbortController();
         const attemptSignal = AbortSignal.any([signal, attempt.signal]);
         const timer = setTimeout(() => attempt.abort(new Error('First-byte timeout')), this.o.firstByteTimeoutMs);
         timer.unref?.();
         const began = this.now();
-        let response, reader;
+        let response, reader, transportFailed = false;
+        const release = this.acquireSlot(candidate.groupId);
         try {
           const proxy = proxyFor(target);
-          response = await this.fetcher(target, { method: 'POST', headers, body: payloadBytes, signal: attemptSignal, redirect: 'error', ...(proxy ? { proxy } : {}) });
+          try { response = await this.fetcher(target, { method: 'POST', headers, body: payloadBytes, signal: attemptSignal, redirect: 'error', ...(proxy ? { proxy } : {}) }); }
+          catch (error) { transportFailed = true; throw error; }
           if (!response.ok) {
             this.recordRoute(candidate, model, `http_${response.status}`);
             clearTimeout(timer);
+            // A gateway page or a bare 502-504 belongs to the edge host, not to
+            // this group; a 401/403 from a secondary host means that host does
+            // not know our account. Both are worth another endpoint.
+            const edge = EndpointPool.isEdgeResponse(response.status, response.headers.get('content-type')) || (epIndex > 0 && [401, 403].includes(response.status));
+            if (edge && epIndex < epOrder.length - 1) { await response.body?.cancel(); edgeFailure = true; break; }
             const retry = response.status === 429 || response.status >= 500 || [401, 403].includes(response.status);
             if (retry) {
               this.penalize(candidate.groupId, retryDelay(response.headers.get('retry-after'), this.now(), this.o.cooldownMs));
@@ -469,6 +525,7 @@ export class Router {
             }
             return errorResponse(`AIHub rejected the request with HTTP ${response.status}${detail} (POST ${url.pathname} via group ${candidate.groupId})`, response.status);
           }
+          this.endpoints.praise(endpoint, this.now() - began);
           // Gemini speaks generateContent, so a non-streaming call is translated
           // whole instead of being piped through.
           if (gemini && !streaming) {
@@ -480,7 +537,7 @@ export class Router {
             this.charge(candidate, (Number(meta.promptTokenCount) || 0) + (Number(meta.candidatesTokenCount) || 0));
             const duration = this.now() - began;
             this.latency.set(candidate.groupId, (this.latency.get(candidate.groupId) ?? duration) * 0.8 + duration * 0.2);
-            if (session) { this.sessions.set(session, { groupId: candidate.groupId, until: this.now() + this.o.sessionTtlMs }); this.prune(); }
+            if (session) { this.sessions.set(session, { groupId: candidate.groupId, endpoint, until: this.now() + this.o.sessionTtlMs }); this.prune(); }
             this.praise(candidate.groupId);
             this.recordRoute(candidate, model, 'success');
             return new Response(JSON.stringify(fromGeminiResponse(json, this.publicId('gemini', model), inboundPath)), {
@@ -496,7 +553,7 @@ export class Router {
           const duration = this.now() - began;
           this.latency.set(candidate.groupId, (this.latency.get(candidate.groupId) ?? duration) * 0.8 + duration * 0.2);
           if (session) {
-            this.sessions.set(session, { groupId: candidate.groupId, until: this.now() + this.o.sessionTtlMs });
+            this.sessions.set(session, { groupId: candidate.groupId, endpoint, until: this.now() + this.o.sessionTtlMs });
             this.prune();
           }
           this.praise(candidate.groupId);
@@ -553,15 +610,21 @@ export class Router {
           if (translator) out.set('content-type', 'text/event-stream; charset=utf-8');
           else for (const name of ['content-type', 'cache-control']) if (response.headers.has(name)) out.set(name, response.headers.get(name));
           return new Response(stream, { status: response.status, headers: out });
-        } catch {
+        } catch (error) {
           clearTimeout(timer);
           attempt.abort();
           await reader?.cancel().catch(() => {});
           this.recordRoute(candidate, model, 'connection_failed');
           if (signal.aborted) signal.throwIfAborted();
+          // Transport errors (DNS, reset, TLS) are the edge's problem, not this
+          // group's: try the next endpoint instead of burning the whole pool.
+          if (transportFailed && epIndex < epOrder.length - 1) { edgeFailure = true; break; }
           this.penalize(candidate.groupId);
           if (session) this.sessions.delete(session);
-        } finally { clearTimeout(timer); }
+        } finally { clearTimeout(timer); release(); }
+      }
+      if (edgeFailure) { this.endpoints.penalize(endpoint); continue; }
+      break;
       }
       // Every group answered "not available for this group": report the upstream
       // words and status rather than a routing failure that hides them.

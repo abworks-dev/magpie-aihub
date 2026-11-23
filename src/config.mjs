@@ -1,5 +1,6 @@
 import { PLATFORMS, validPlatform, modelDescriptor, protocolBase, protocolNpm } from './platforms.mjs';
 import { defaultLimits } from './limits.mjs';
+import { parseEndpoints } from './endpoints.mjs';
 
 export const PROVIDER = 'aihub-auto';
 export const ORIGIN = 'https://aihub.top';
@@ -13,6 +14,8 @@ const defaults = {
   maxSessions: 5000, maxBodyBytes: 20 * 1024 * 1024,
   breakerWindowMs: 300_000, breakerMinSamples: 5, breakerFailureRate: 0.5,
   dailyBudget: 0, priceAlertRatio: 0.2,
+  endpoints: [{ url: 'https://aihub.top', label: '默认' }], endpointMode: 'failover', endpointCooldownMs: 60_000,
+  spread: 'off', spreadBand: 1.1, maxInflightPerGroup: 0,
   excludedGroups: [], allowedGroups: [], requirePassed: false,
   defaultApi: 'responses', models: [], autoCreateKeys: false, bareModelIds: false,
   evictIdleKeys: false, evictIdleDays: 7,
@@ -38,11 +41,12 @@ export function settings(raw = {}) {
     maxSessions: [1, 50_000], maxBodyBytes: [1024, 50 * 1024 * 1024], monitorPort: [1024, 65535],
     breakerWindowMs: [10_000, 3_600_000], breakerMinSamples: [1, 100], breakerFailureRate: [0, 1],
     priceAlertRatio: [0.01, 10], dailyBudget: [0, 1_000_000],
+    endpointCooldownMs: [1_000, 3_600_000], spreadBand: [1, 5], maxInflightPerGroup: [0, 1000],
   };
   for (const [key, [min, max]] of Object.entries(numbers)) {
     if (typeof o[key] !== 'number' || !Number.isFinite(o[key]) || o[key] < min || o[key] > max)
       throw new Error(`Invalid ${key}: expected ${min}..${max}`);
-    if (!Number.isInteger(o[key]) && !['maxMultiplier', 'minBalance', 'dailyBudget', 'breakerFailureRate', 'priceAlertRatio', 'keysPerPlatform', 'reuseBias'].includes(key))
+    if (!Number.isInteger(o[key]) && !['maxMultiplier', 'minBalance', 'dailyBudget', 'breakerFailureRate', 'priceAlertRatio', 'keysPerPlatform', 'reuseBias', 'spreadBand'].includes(key))
       throw new Error(`${key} must be an integer`);
   }
   if (!['economy', 'balanced', 'speed', 'price', 'value', 'reliable'].includes(o.strategy)) throw new Error('Invalid strategy');
@@ -53,6 +57,9 @@ export function settings(raw = {}) {
   }
   o.platformCaps = { ...o.platformCaps };
   if (!['responses', 'chat'].includes(o.defaultApi)) throw new Error('Invalid defaultApi');
+  if (!['sticky', 'failover', 'balance'].includes(o.endpointMode)) throw new Error('Invalid endpointMode');
+  if (!['off', 'p2c', 'weighted'].includes(o.spread)) throw new Error('Invalid spread');
+  o.endpoints = parseEndpoints(o.endpoints);
   if ([o.requirePassed, o.autoCreateKeys, o.bareModelIds, o.evictIdleKeys, o.monitorEnabled].some(v => typeof v !== 'boolean')) throw new Error('Boolean option expected');
   if (!Array.isArray(o.platforms) || !o.platforms.length || !o.platforms.every(validPlatform) || new Set(o.platforms).size !== o.platforms.length) throw new Error('Invalid platforms');
   o.platforms = [...o.platforms];

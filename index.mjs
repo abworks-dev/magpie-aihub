@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { PROVIDER, BASE, settings, manualBundle, configModels } from './src/config.mjs';
-import { login } from './src/api.mjs';
+import { login, setOrigins } from './src/api.mjs';
 import { Account, accountSaver } from './src/account.mjs';
 import { Router } from './src/router.mjs';
 import { modelDescriptor, protocolBase, protocolNpm } from './src/platforms.mjs';
@@ -46,6 +46,8 @@ const descriptorApi = (id, fallback) => (id.startsWith('gemini::') ? 'responses'
 
 async function AIHubPlugin({ client }, initialOptions = {}) {
   const options = settings(initialOptions);
+  // Console calls (sign-in, balance, keys) follow the same entry hosts as inference.
+  setOrigins(options.endpoints.map(row => row.url));
   const runtimes = new Map();
   let lastDiscoveryError = '';
   // One listener per plugin factory, never per account: it is the page itself

@@ -60,7 +60,7 @@ export async function monitorSnapshot(runtimes, options, now = Date.now) {
         },
         models: [...new Set(c.advertisedModels ?? c.models ?? [])].filter(id => typeof id === 'string').slice(0, 200).map(text),
         eligible: reasons.length === 0, reasons, hasKey: account.data.keys.some(k => k.groupId === c.groupId),
-        selectedCount, cooldownUntil, lastUsedAt: finite(last?.at),
+        selectedCount, cooldownUntil, lastUsedAt: finite(last?.at), inflight: finite(router.inflight?.get(c.groupId)) ?? 0,
       };
     });
     accounts.push({
@@ -98,5 +98,19 @@ export async function monitorSnapshot(runtimes, options, now = Date.now) {
       keyEvents: Array.isArray(account.audit) ? account.audit.slice(-8) : [],
     });
   }
-  return { schemaVersion: 1, generatedAt: now(), accounts };
+  // Entry-host health lives on the router, but the list itself comes from the
+  // settings, so it is reported once per page rather than per account.
+  const endpoints = new Map();
+  for (const row of options.endpoints ?? []) endpoints.set(row.url, { url: row.url, label: row.label, latencyMs: null, failures: 0, wins: 0, ok: true, cooldownUntil: null });
+  for (const { router } of runtimes.values()) {
+    for (const entry of router.endpoints?.report?.() ?? []) {
+      const seen = endpoints.get(entry.url);
+      if (!seen) { endpoints.set(entry.url, { ...entry }); continue; }
+      seen.failures += entry.failures;
+      seen.wins += entry.wins;
+      if (entry.latencyMs !== null && (seen.latencyMs === null || entry.latencyMs < seen.latencyMs)) seen.latencyMs = entry.latencyMs;
+      if (!entry.ok) { seen.ok = false; seen.cooldownUntil = entry.cooldownUntil; }
+    }
+  }
+  return { schemaVersion: 1, generatedAt: now(), accounts, endpoints: [...endpoints.values()], endpointMode: options.endpointMode };
 }

@@ -1,6 +1,6 @@
 # 配置与凭据
 
-插件无环境变量配置入口，无外部依赖；由 Magpie options 和 auth API 配置。固定供应商 aihub-auto、origin https://aihub.top；Responses / Chat / models base 为 /v1，原生 Gemini 为 /v1beta。见 [配置](../src/config.mjs)、[平台](../src/platforms.mjs)、[清单](../package.json)。v0.3.1 为预发布版本，真实生产联调未验证；六平台接口仅按公开代码核对，现有验证为 local mock 与 Edge 合成代理。
+插件无环境变量配置入口，无外部依赖；由 Magpie options 和 auth API 配置。固定供应商 aihub-auto、origin 默认 https://aihub.top（「AIHub 端点」里可加多个入口做故障转移，最多 8 个）；Responses / Chat / models base 为 /v1，原生 Gemini 为 /v1beta。见 [配置](../src/config.mjs)、[平台](../src/platforms.mjs)、[清单](../package.json)。v0.3.1 为预发布版本，真实生产联调未验证；六平台接口仅按公开代码核对，现有验证为 local mock 与 Edge 合成代理。
 
 ## 非敏感 options
 
@@ -14,6 +14,10 @@
 | strategy | balanced；economy / balanced / speed / price / value / reliable | UI + Router | 按倍率、倍率×(1+min(ms,60000)/10000)、延迟、真实价格排序；`value` = 价格×(1+min(ms,60000)/10000)×(1+3×(1-成功率))；`reliable` = (1-成功率)×1e6+价格；未知延迟取 30000ms |
 | maxAttempts | 3；整数 1–5 | UI + Router | 推理发送次数含首次；Key / 模型读取不计入；首块前切换可能重复计费 |
 | poolSize | 4；整数 1–32 | UI + Router | 一次路由最多依次尝试的候选分组数；不限制 Key 总数，池满不换/删 Key |
+| spread | off；off/p2c/weighted | UI + Router | 在最优附近的多组间分散请求，避免同一组被打热；会话粘性优先。默认关 |
+| maxInflightPerGroup | 0；整数 0–1000 | UI + Router | 同一分组同时等待首字节的请求数上限；0 不限 |
+| endpoints | 默认 [{url:https://aihub.top,label:默认}]；最多 8 个 | UI + Router + api | 入口主机列表；入站与出站都只接受列表内的 origin |
+| endpointMode | failover；failover/sticky/balance | UI + Router | failover 只在边缘故障时换入口；balance 按延迟分流，需各入口同库 |
 | excludedGroups | []；正安全整数数组 | UI + Router | 排除优先 |
 | allowedGroups | []；正安全整数数组 | UI + Router | 空数组不额外限组，仍受其他筛选 |
 | requirePassed | false；boolean | UI + Router | 要求大厅 passed=true；manual 缺该证据，开启会排除全部手工组 |

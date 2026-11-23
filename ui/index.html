@@ -85,6 +85,48 @@
                   <input id="poolSize" name="poolSize" type="number" min="1" max="32" step="1" value="4" required>
                   <small>一次路由最多依次尝试多少个候选分组；Key 总数由「每账户 Key 上限」决定。</small>
                 </label>
+                <label class="field">
+                  <span class="field-label">流量分散</span>
+                  <select id="spread" name="spread" aria-describedby="spread-help">
+                    <option value="off">关闭（总选最优）</option>
+                    <option value="p2c">P2C（推荐）</option>
+                    <option value="weighted">加权随机</option>
+                  </select>
+                  <small id="spread-help">在最优附近的多组间分散请求，避免同一组被打热。会话粘性优先，不会为分散而丢掉缓存。</small>
+                </label>
+                <label class="field">
+                  <span class="field-label">单分组在途上限</span>
+                  <input id="maxInflightPerGroup" name="maxInflightPerGroup" type="number" min="0" max="1000" step="1" value="0" aria-describedby="inflight-help">
+                  <small id="inflight-help">同一分组同时等待首字节的请求数上限；0 表示不限。</small>
+                </label>
+              </div>
+            </section>
+
+            <section class="block" aria-labelledby="endpoints-title">
+              <div class="block-head">
+                <h2 id="endpoints-title">AIHub 端点</h2>
+                <p>主域名被墙或网关 502 时换到下一个入口。只有边缘故障（DNS、连接重置、非 JSON 的 502–504）才会切换，AIHub 自己返回的 JSON 错误不换。</p>
+              </div>
+              <div class="grid">
+                <label class="field">
+                  <span class="field-label">端点模式</span>
+                  <select id="endpointMode" name="endpointMode" aria-describedby="endpoint-mode-help">
+                    <option value="failover">故障转移（推荐）</option>
+                    <option value="sticky">只用主端点</option>
+                    <option value="balance">均衡（需同一账号库）</option>
+                  </select>
+                  <small id="endpoint-mode-help">均衡会把请求分到多个入口，前提是各入口指向同一套账号与分组数据。</small>
+                </label>
+                <label class="field">
+                  <span class="field-label">端点冷却（秒）</span>
+                  <input id="endpointCooldownSec" name="endpointCooldownSec" type="number" min="1" max="3600" step="1" value="60" aria-describedby="endpoint-cooldown-help">
+                  <small id="endpoint-cooldown-help">边缘故障后该入口暂停多少秒再重新参与选择，1–3600。</small>
+                </label>
+              </div>
+              <div id="endpoint-list" class="endpoint-list" role="group" aria-label="端点列表"></div>
+              <div class="endpoint-actions">
+                <button id="endpoint-add" class="btn btn-quiet" type="button">添加端点</button>
+                <span class="note">最多 8 个。标签只用于显示；地址会归一成协议 + 主机。</span>
               </div>
             </section>
 
@@ -251,6 +293,7 @@
         </div>
         <div id="monitor-accounts" class="accounts"></div>
         <div id="monitor-summary" class="kpis" aria-live="polite"></div>
+        <div id="monitor-endpoints" class="endpoints"></div>
         <div id="monitor-filters" class="filters" role="group" aria-label="按平台筛选"></div>
         <div id="monitor-body" class="monitor-body">
           <p class="empty">切换到监控时加载快照。</p>

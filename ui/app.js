@@ -22,6 +22,8 @@
     excludedGroups: [], allowedGroups: [], requirePassed: false,
     minBalance: 0, maxKeysPerAccount: 8, keysPerPlatform: 0, reuseBias: 0.25, evictIdleKeys: false, evictIdleDays: 7,
     autoCreateKeys: false, bareModelIds: false, defaultApi: 'responses', models: [], monitorPort: 19871,
+    endpoints: [{ url: 'https://aihub.top', label: '默认' }], endpointMode: 'failover', endpointCooldownMs: 60000,
+    spread: 'off', spreadBand: 1.1, maxInflightPerGroup: 0,
     platforms: [...platforms],
   };
   // Preserve only recognized, valid nonsecret settings from the latest options.
@@ -124,13 +126,23 @@
     if (Array.isArray(raw.platforms) && raw.platforms.length && raw.platforms.every(id => platforms.includes(id))) result.platforms = [...new Set(raw.platforms)];
     if (validInteger(raw.monitorPort, 1024, 65535)) result.monitorPort = raw.monitorPort;
     if (Array.isArray(raw.models)) result.models = raw.models;
+    if (['sticky', 'failover', 'balance'].includes(raw.endpointMode)) result.endpointMode = raw.endpointMode;
+    if (['off', 'p2c', 'weighted'].includes(raw.spread)) result.spread = raw.spread;
+    if (typeof raw.spreadBand === 'number' && Number.isFinite(raw.spreadBand) && raw.spreadBand >= 1 && raw.spreadBand <= 5) result.spreadBand = raw.spreadBand;
+    if (validInteger(raw.maxInflightPerGroup, 0, 1000)) result.maxInflightPerGroup = raw.maxInflightPerGroup;
+    if (validInteger(raw.endpointCooldownMs, 1000, 3600000)) result.endpointCooldownMs = raw.endpointCooldownMs;
+    if (Array.isArray(raw.endpoints)) {
+      const rows = raw.endpoints.filter(row => row && typeof row.url === 'string').map(row => ({ url: row.url, label: typeof row.label === 'string' ? row.label : '' }));
+      if (rows.length) result.endpoints = rows;
+    }
     return result;
   }
 
   function populate(raw) {
     const options = safeOptions(raw);
-    for (const key of ['strategy', 'maxMultiplier', 'maxAttempts', 'poolSize', 'defaultApi', 'monitorPort', 'minBalance', 'maxKeysPerAccount', 'keysPerPlatform', 'reuseBias', 'evictIdleDays', 'dailyBudget', 'priceAlertRatio']) $(key).value = String(options[key]);
+    for (const key of ['strategy', 'maxMultiplier', 'maxAttempts', 'poolSize', 'defaultApi', 'monitorPort', 'minBalance', 'maxKeysPerAccount', 'keysPerPlatform', 'reuseBias', 'evictIdleDays', 'dailyBudget', 'priceAlertRatio', 'spread', 'maxInflightPerGroup', 'endpointMode']) $(key).value = String(options[key]);
     $('platformCaps').value = capsToText(options.platformCaps);
+    $('endpointCooldownSec').value = String(Math.round((options.endpointCooldownMs ?? 60000) / 1000));
     for (const platform of platforms) $(`platform-${platform}`).checked = options.platforms.includes(platform);
     for (const key of ['excludedGroups', 'allowedGroups']) $(key).value = options[key].join(', ');
     for (const key of ['requirePassed', 'autoCreateKeys', 'bareModelIds', 'evictIdleKeys']) $(key).checked = options[key];
@@ -143,6 +155,7 @@
       if (limit && validInteger(model.output, 1, Number.MAX_SAFE_INTEGER)) parts.push(String(model.output));
       return parts.join('|');
     }).join('\n');
+    renderEndpoints(options.endpoints);
     renderGroupPicker();
   }
 
@@ -315,13 +328,36 @@
     });
   }
 
+  function endpointRowHtml(row, index) {
+    return `<div class="endpoint-row" data-index="${index}">
+      <input class="endpoint-label" type="text" maxlength="24" value="${escapeHtml(row.label ?? '')}" placeholder="标签" aria-label="端点标签">
+      <input class="endpoint-url" type="text" value="${escapeHtml(row.url ?? '')}" placeholder="https://aihub.top" aria-label="端点地址" spellcheck="false" autocomplete="off">
+      <button class="mini endpoint-remove" type="button" aria-label="移除端点">移除</button>
+    </div>`;
+  }
+
+  function renderEndpoints(list) {
+    const rows = Array.isArray(list) && list.length ? list : [{ url: 'https://aihub.top', label: '默认' }];
+    $('endpoint-list').innerHTML = rows.map(endpointRowHtml).join('');
+  }
+
+  function readEndpoints() {
+    const list = $('endpoint-list');
+    if (!list || typeof list.querySelectorAll !== 'function') return undefined;
+    const rows = [...list.querySelectorAll('.endpoint-row')].map(row => ({
+      url: (row.querySelector?.('.endpoint-url')?.value ?? '').trim(),
+      label: (row.querySelector?.('.endpoint-label')?.value ?? '').trim(),
+    })).filter(row => row.url);
+    return rows.length ? rows : undefined;
+  }
+
   function readForm() {
     if (typeof form.querySelectorAll === 'function') form.querySelectorAll('[aria-invalid]').forEach(field => field.removeAttribute('aria-invalid'));
     if (!['economy', 'balanced', 'speed', 'price', 'value', 'reliable'].includes($('strategy').value)) invalid('strategy', '请选择有效的路由策略。');
     if (!['responses', 'chat'].includes($('defaultApi').value)) invalid('defaultApi', '请选择有效的默认 API。');
     const enabledPlatforms = platforms.filter(platform => $(`platform-${platform}`).checked);
     if (!enabledPlatforms.length) invalid('platform-openai', '请至少选择一个平台。');
-    return {
+    const values = {
       platforms: enabledPlatforms,
       monitorPort: readNumber('monitorPort', '回环端口', 1024, 65535),
       strategy: $('strategy').value,
@@ -343,8 +379,17 @@
       autoCreateKeys: $('autoCreateKeys').checked,
       bareModelIds: $('bareModelIds').checked,
       defaultApi: $('defaultApi').value,
+      spread: $('spread').value,
+      maxInflightPerGroup: readNumber('maxInflightPerGroup', '单分组在途上限', 0, 1000),
+      endpointMode: $('endpointMode').value,
+      endpointCooldownMs: readNumber('endpointCooldownSec', '端点冷却（秒）', 1, 3600) * 1000,
       models: readModels(),
     };
+    // An endpoint list only exists once the page rendered it; a headless save
+    // without that list keeps the stored endpoints instead of blanking them.
+    const endpoints = readEndpoints();
+    if (endpoints) values.endpoints = endpoints;
+    return values;
   }
 
   function preserveModelLimits(models, previous) {
@@ -662,6 +707,22 @@
     }).join('');
   }
 
+  function renderEndpointHealth() {
+    const rows = Array.isArray(state.snapshot?.endpoints) ? state.snapshot.endpoints : [];
+    const target = $('monitor-endpoints');
+    if (!target) return;
+    if (!rows.length) { target.innerHTML = ''; return; }
+    const modeLabel = { failover: '故障转移', sticky: '只用主端点', balance: '均衡' }[state.snapshot?.endpointMode] ?? '—';
+    target.innerHTML = `<div class="endpoint-head"><span class="endpoint-title">端点</span><span class="endpoint-mode">${escapeHtml(modeLabel)}</span></div>` + rows.map(row => `
+      <div class="endpoint-health">
+        <span class="dot ${row.ok ? 'dot-ok' : 'dot-off'}"></span>
+        <span class="endpoint-name">${escapeHtml(row.label || row.url)}</span>
+        <span class="endpoint-url mono">${escapeHtml(row.url)}</span>
+        <span class="endpoint-metric">${row.latencyMs === null || row.latencyMs === undefined ? '—' : row.latencyMs + 'ms'}</span>
+        <span class="endpoint-metric">${row.failures ? `失败 ${row.failures}` : '无失败'}</span>
+      </div>`).join('');
+  }
+
   function renderSnapshot() {
     const rows = groups();
     const accountsList = accounts();
@@ -671,6 +732,7 @@
     const errorCode = accountsList.find(account => account.errorCode)?.errorCode ?? '';
     $('monitor-updated').textContent = state.snapshot?.generatedAt ? `更新于 ${clock(state.snapshot.generatedAt)}` : '';
     renderAccounts(accountsList);
+    renderEndpointHealth();
 
     const skipped = new Map();
     for (const row of rows) if (row.eligible !== true) for (const reason of row.reasons ?? []) skipped.set(reason, (skipped.get(reason) ?? 0) + 1);
@@ -733,7 +795,7 @@
         <td class="num">${decimal(row.metrics?.tps, 1)}</td>
         <td class="num" title="${num(row.metrics?.realPrice) === null ? '窗口未就绪或没有区间样本' : `$${decimal(row.metrics.realPrice, 3)}/M ≈ ¥${(row.metrics.realPrice * 7.2).toFixed(2)}/M`}">${num(row.metrics?.realPrice) === null ? '—' : `$${decimal(row.metrics.realPrice, 3)}`}</td>
         <td class="num" title="${escapeHtml((Array.isArray(row.cards) && row.cards.length ? row.cards : (Array.isArray(row.models) ? row.models : []).map(model => ({ model }))).slice(0, 20).map(card => `${card.model}${num(card.price) === null ? '' : ` · ¥${decimal(card.price, 4)}`}${num(card.sampleCount) === null ? '' : ` · ${card.sampleCount} 样本`}${card.health === 'failed' ? ' · 检测失败' : ''}`).join('\n'))}">${Array.isArray(row.models) ? row.models.length : 0}</td>
-        <td class="num" title="${row.hasKey ? '本连接已为该分组建了 Key' : '本连接尚未为该分组建 Key'}">${row.selectedCount ?? 0}</td>
+        <td class="num" title="${row.hasKey ? '本连接已为该分组建了 Key' : '本连接尚未为该分组建 Key'}${row.inflight ? ` · 在途 ${row.inflight}` : ''}">${row.selectedCount ?? 0}</td>
         <td>${stateText}</td>
         <td class="num">${clock(row.lastUsedAt)}</td>
       </tr>`;
@@ -758,6 +820,26 @@
     setDirty(true);
   });
   form.addEventListener('change', () => setDirty(true));
+
+  $('endpoint-add').addEventListener('click', () => {
+    const rows = [...$('endpoint-list').querySelectorAll('.endpoint-row')].map(row => ({
+      url: row.querySelector('.endpoint-url')?.value ?? '', label: row.querySelector('.endpoint-label')?.value ?? '',
+    }));
+    if (rows.length >= 8) { message('最多 8 个端点。', 'error'); return; }
+    $('endpoint-list').innerHTML = [...rows, { url: '', label: '' }].map(endpointRowHtml).join('');
+    setDirty(true);
+  });
+  $('endpoint-list').addEventListener('click', event => {
+    const button = event.target.closest?.('.endpoint-remove');
+    const row = button?.closest('.endpoint-row');
+    if (!row) return;
+    if ($('endpoint-list').querySelectorAll('.endpoint-row').length <= 1) { message('至少保留一个端点。', 'error'); return; }
+    row.remove();
+    setDirty(true);
+  });
+  // Draw the default row before any host options arrive, so the list is never
+  // an empty box on a page that cannot reach the bridge.
+  if ($('endpoint-list') && !$('endpoint-list').innerHTML) renderEndpoints();
 
   async function save() {
     if (state.busy || !state.connected) return;

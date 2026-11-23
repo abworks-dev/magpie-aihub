@@ -152,6 +152,11 @@ export function snapshotView(raw) {
         maxKeysPerAccount: number(account?.keyState?.maxKeysPerAccount), minBalance: number(account?.keyState?.minBalance),
       },
     })),
+    endpoints: list(raw.endpoints, 8).map(entry => ({
+      url: safeString(entry?.url, 200), label: safeString(entry?.label, 40), ok: bool(entry?.ok),
+      latencyMs: number(entry?.latencyMs), failures: number(entry?.failures), cooldownUntil: timestamp(entry?.cooldownUntil),
+    })).filter(entry => entry.url),
+    endpointMode: code(raw.endpointMode),
   };
   const json = JSON.stringify(result);
   if (Buffer.byteLength(json) > MAX_BYTES) throw new Error('SNAPSHOT_TOO_LARGE');

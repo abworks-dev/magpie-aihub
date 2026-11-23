@@ -419,3 +419,26 @@ fieldset:disabled { opacity: .6; }
 @media (max-width: 720px) {
   .table th:nth-child(2), .table td:nth-child(2) { display: none; }
 }
+
+/* ---- entry endpoints: an editable list and its health ----------------- */
+.endpoint-list { display: grid; gap: 8px; margin-top: 16px; }
+.endpoint-row { display: grid; grid-template-columns: 160px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.endpoint-row input { width: 100%; }
+.endpoint-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+.endpoint-actions .note { margin: 0; padding: 0; border: 0; background: none; }
+
+.endpoints { display: grid; gap: 6px; margin: 12px 0 4px; }
+.endpoint-head { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); }
+.endpoint-title { font-weight: 500; letter-spacing: .04em; }
+.endpoint-mode { padding: 1px 8px; border: 1px solid var(--line); border-radius: var(--r-control); }
+.endpoint-health { display: grid; grid-template-columns: 10px 96px minmax(0, 1fr) 72px 88px; gap: 10px; align-items: center; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--surface); font-size: 12px; }
+.endpoint-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.endpoint-url { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.endpoint-metric { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); font-size: 11px; }
+
+@media (max-width: 720px) {
+  .endpoint-row { grid-template-columns: 1fr auto; }
+  .endpoint-row .endpoint-label { grid-column: 1 / -1; }
+  .endpoint-health { grid-template-columns: 10px minmax(0, 1fr) 88px; }
+  .endpoint-health .endpoint-url, .endpoint-health .endpoint-metric:first-of-type { display: none; }
+}
