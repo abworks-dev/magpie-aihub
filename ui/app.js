@@ -61,6 +61,30 @@
     return error instanceof Error && error.message ? error.message.slice(0, 400) : '宿主未返回可用结果，请重试。';
   }
 
+  // A failed fetch with no status at all is a connection failure: the host
+  // retires the page service on every plugin update or settings save and only
+  // starts it again on the next call. Messages differ per engine (Firefox
+  // "NetworkError when attempting to fetch resource.", Chrome "Failed to
+  // fetch"); match on shape, not on realm-sensitive instanceof.
+  function isConnectionFailure(error) {
+    if (!error || typeof error !== 'object') return false;
+    if (error.name === 'TypeError' || error.name === 'AbortError') return true;
+    return /NetworkError|Failed to fetch|network error|Load failed/i.test(String(error.message ?? ''));
+  }
+
+  function requestSnapshot(url, token) {
+    return bounded(fetch(url.href, { headers: { accept: 'application/json', 'x-aihub-service-token': token }, cache: 'no-store' }), '读取快照超时', 20000);
+  }
+
+  function renderServiceGap() {
+    $('monitor-updated').textContent = '';
+    $('monitor-summary').innerHTML = '';
+    $('monitor-filters').innerHTML = '';
+    $('monitor-body').innerHTML = '<p class="empty">插件宿主刚重载过，页面服务还没就绪——更新插件或保存设置后都会这样，通常一两秒内恢复。</p><p class="empty"><button type="button" class="btn" id="snapshot-retry">重试</button></p>';
+    const retry = $('snapshot-retry');
+    if (retry && typeof retry.addEventListener === 'function') retry.addEventListener('click', () => { loadSnapshot(); });
+  }
+
   function bounded(promise, label, milliseconds = 12000) {
     let timer;
     return Promise.race([
@@ -503,7 +527,15 @@
     $('monitor-body').innerHTML = '<p class="empty">正在读取本机快照…</p>';
     try {
       const url = new URL('snapshot', globalThis.location.href);
-      const response = await bounded(fetch(url.href, { headers: { accept: 'application/json', 'x-aihub-service-token': token }, cache: 'no-store' }), '读取快照超时', 20000);
+      let response;
+      try {
+        response = await requestSnapshot(url, token);
+      } catch (error) {
+        if (!isConnectionFailure(error)) throw error;
+        // One quiet retry: a restarted host needs a moment to bind its port.
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        response = await requestSnapshot(url, token);
+      }
       if (!response.ok) {
         let payload = null;
         try { payload = await response.json(); } catch { payload = null; }
@@ -529,6 +561,10 @@
       renderGroupPicker();
     } catch (error) {
       state.snapshot = null;
+      if (isConnectionFailure(error)) {
+        renderServiceGap();
+        return;
+      }
       $('monitor-updated').textContent = '';
       $('monitor-summary').innerHTML = '';
       $('monitor-filters').innerHTML = '';

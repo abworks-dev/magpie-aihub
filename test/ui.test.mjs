@@ -265,6 +265,58 @@ test('a desktop page without a service entry explains where the loopback page li
   assert.match(h.node('monitor-body').innerHTML, /读取快照失败|127\.0\.0\.1:19871/);
 });
 
+test('a connection failure retries once, then offers a retry button', async () => {
+  const h = harness({
+    pathname: '/_magpie/plugin/tok/_magpie/service/', token: 'served-token',
+    fetchImpl: async () => { throw new TypeError('NetworkError when attempting to fetch resource.'); },
+  });
+  await settle();
+  h.clickTab('monitor');
+  for (let i = 0; i < 4; i += 1) await settle();
+  await new Promise(resolve => setTimeout(resolve, 1150));
+  for (let i = 0; i < 4; i += 1) await settle();
+  assert.equal(h.calls.fetch.length, 2, 'one quiet retry after a restarted host');
+  const body = h.node('monitor-body').innerHTML;
+  assert.match(body, /宿主刚重载/);
+  assert.doesNotMatch(body, /NetworkError/);
+  assert.match(body, /id="snapshot-retry"/);
+  assert.equal(typeof h.node('snapshot-retry').handlers.click, 'function', 'the retry button must be wired');
+});
+
+test('the retry button reads the snapshot again once the service is back', async () => {
+  let attempt = 0;
+  const h = harness({
+    pathname: '/_magpie/plugin/tok/_magpie/service/', token: 'served-token',
+    fetchImpl: async () => {
+      attempt += 1;
+      if (attempt <= 2) throw new TypeError('Failed to fetch');
+      return { ok: true, status: 200, json: async () => snapshot };
+    },
+  });
+  await settle();
+  h.clickTab('monitor');
+  for (let i = 0; i < 4; i += 1) await settle();
+  await new Promise(resolve => setTimeout(resolve, 1150));
+  for (let i = 0; i < 4; i += 1) await settle();
+  assert.match(h.node('monitor-body').innerHTML, /id="snapshot-retry"/);
+  await h.node('snapshot-retry').handlers.click();
+  for (let i = 0; i < 4; i += 1) await settle();
+  assert.equal(h.calls.fetch.length, 3, 'the click issues exactly one more read');
+  assert.match(h.node('monitor-body').innerHTML, /Fixture group/);
+});
+
+test('a non-connection error keeps its message and is not retried', async () => {
+  const h = harness({
+    pathname: '/_magpie/plugin/tok/_magpie/service/', token: 'served-token',
+    fetchImpl: async () => ({ ok: false, status: 500, json: async () => ({ error: { code: '', message: 'boom' } }) }),
+  });
+  await settle();
+  h.clickTab('monitor');
+  for (let i = 0; i < 4; i += 1) await settle();
+  assert.equal(h.calls.fetch.length, 1, 'a real status is not a connection failure');
+  assert.match(h.node('monitor-body').innerHTML, /快照接口返回 500/);
+});
+
 test('a rejected page token reloads the page once instead of showing a bare 403', async () => {
   const h = harness({
     pathname: '/_magpie/plugin/tok/_magpie/service/', token: 'test-token',
