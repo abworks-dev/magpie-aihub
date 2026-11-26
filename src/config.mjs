@@ -8,7 +8,7 @@ export const BASE = `${ORIGIN}/v1`;
 
 const defaults = {
   maxMultiplier: 0.16, platformCaps: {}, strategy: 'balanced', maxAttempts: 3, poolSize: 4,
-  minBalance: 0, maxKeysPerAccount: 8, keysPerPlatform: 0, reuseBias: 0.25, balanceRefreshMs: 60_000,
+  minBalance: 0, maxKeysPerAccount: 32, keysPerPlatform: 0, reuseBias: 0.25, balanceRefreshMs: 60_000,
   refreshMs: 60_000, maxStaleMs: 600_000, firstByteTimeoutMs: 30_000,
   totalTimeoutMs: 90_000, cooldownMs: 30_000, sessionTtlMs: 86_400_000,
   maxSessions: 5000, maxBodyBytes: 20 * 1024 * 1024,
@@ -18,12 +18,23 @@ const defaults = {
   spread: 'off', spreadBand: 1.1, maxInflightPerGroup: 0,
   excludedGroups: [], allowedGroups: [], requirePassed: false,
   defaultApi: 'responses', models: [], autoCreateKeys: false, bareModelIds: false,
-  evictIdleKeys: false, evictIdleDays: 7,
+  evictIdleKeys: true, evictIdleDays: 7, keyDefaultsMigrated: false,
   platforms: [...PLATFORMS], monitorPort: 19871,
   // Deprecated: the page service is always on, so this stored option is accepted
   // for older installs and otherwise ignored.
   monitorEnabled: false,
 };
+
+// Apply legacy provider defaults at the host entry, before validating options.
+export function migrateKeyDefaults(raw = {}) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+  if (raw.keyDefaultsMigrated !== undefined && raw.keyDefaultsMigrated !== false) return raw;
+
+  const migrated = { ...raw, keyDefaultsMigrated: true };
+  if ([undefined, 8, 16].includes(raw.maxKeysPerAccount)) migrated.maxKeysPerAccount = defaults.maxKeysPerAccount;
+  if (raw.evictIdleKeys === undefined || raw.evictIdleKeys === false) migrated.evictIdleKeys = defaults.evictIdleKeys;
+  return migrated;
+}
 
 export function settings(raw = {}) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Options must be an object');
@@ -60,7 +71,7 @@ export function settings(raw = {}) {
   if (!['sticky', 'failover', 'balance'].includes(o.endpointMode)) throw new Error('Invalid endpointMode');
   if (!['off', 'p2c', 'weighted'].includes(o.spread)) throw new Error('Invalid spread');
   o.endpoints = parseEndpoints(o.endpoints);
-  if ([o.requirePassed, o.autoCreateKeys, o.bareModelIds, o.evictIdleKeys, o.monitorEnabled].some(v => typeof v !== 'boolean')) throw new Error('Boolean option expected');
+  if ([o.requirePassed, o.autoCreateKeys, o.bareModelIds, o.evictIdleKeys, o.keyDefaultsMigrated, o.monitorEnabled].some(v => typeof v !== 'boolean')) throw new Error('Boolean option expected');
   if (!Array.isArray(o.platforms) || !o.platforms.length || !o.platforms.every(validPlatform) || new Set(o.platforms).size !== o.platforms.length) throw new Error('Invalid platforms');
   o.platforms = [...o.platforms];
   for (const key of ['excludedGroups', 'allowedGroups']) {

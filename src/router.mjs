@@ -49,7 +49,14 @@ export class Router {
     // router, which is why endpoint health is tracked apart from group health.
     this.endpoints = new EndpointPool(options.endpoints, { mode: options.endpointMode, cooldownMs: options.endpointCooldownMs, now });
     this.inflight = new Map();
-    this.sessions = new Map(); this.cooldown = new Map(); this.latency = new Map(); this.rejected = new Map();
+    this.sessions = account.keyState?.sessions ?? new Map(); this.cooldown = new Map(); this.latency = new Map(); this.rejected = new Map();
+    this.account.isStickyKeyGroup = groupId => {
+      const at = this.now();
+      for (const session of this.sessions.values()) {
+        if (session.groupId === groupId && session.until > at) return true;
+      }
+      return false;
+    };
     // What the eviction policy actually gave back, newest first; the page shows it.
     this.evictions = [];
     this.locks = new Map(); this.lastRoutes = [];
@@ -313,6 +320,7 @@ export class Router {
     if (body.previous_response_id || body.conversation) { clearTimeout(budgetTimer); return errorResponse('Send full conversation history; server-side previous_response_id/conversation routing is not supported', 400); }
     const session = sessionKey(request.headers, { ...body, model: publicModelId(platform, model) }, url.pathname);
     let unlock = () => {};
+    let releaseKey = () => {};
     try {
       unlock = await this.lock(session, signal);
       signal.throwIfAborted();
@@ -389,31 +397,21 @@ export class Router {
       // One group serves many models, so the ordering above already prefers a
       // keyed group within the configured reuse bias instead of minting a key per model.
       // A per-platform quota keeps one vendor from eating every slot of a shared pool.
+      const used = new Map();
+      const hasPlatformSpace = c => this.account.data.mode !== 'managed' || keyedGroups.has(c.groupId) ||
+        !this.o.keysPerPlatform || (used.get(c.platform ?? 'openai') ?? 0) < this.o.keysPerPlatform;
       if (this.o.keysPerPlatform > 0 && this.account.data.mode === 'managed') {
-        const used = new Map();
         for (const row of catalogue) {
           if (!keyedGroups.has(row.groupId)) continue;
           const platformId = row.platform ?? 'openai';
           used.set(platformId, (used.get(platformId) ?? 0) + 1);
         }
-        candidates = candidates.filter(c => keyedGroups.has(c.groupId) || (used.get(c.platform ?? 'openai') ?? 0) < this.o.keysPerPlatform);
+        candidates = candidates.filter(hasPlatformSpace);
       }
-      // A full managed pool does not create/delete keys just because market rankings move.
-      // The one exception is opt-in: when a full pool is the only thing keeping this
-      // model from a group, give the least recently used key its slot back.
-      const beforePool = candidates;
-      if (this.account.data.mode === 'managed' && this.account.data.keys.length >= this.o.maxKeysPerAccount) {
-        let freed = 0;
-        if (this.o.evictIdleKeys && typeof this.account.evictIdle === 'function') {
-          const keep = new Set(candidates.map(c => c.groupId));
-          const outcome = await this.account.evictIdle({ keep, days: this.o.evictIdleDays, apply: true }, signal).catch(() => null);
-          for (const gone of outcome?.deleted ?? []) this.evictions.unshift({ at: this.now(), groupId: gone.groupId, name: gone.name });
-          if (this.evictions.length > 20) this.evictions.length = 20;
-          freed = outcome?.deleted?.length ?? 0;
-        }
-        // Without a freed slot only the groups that already carry a key can work.
-        if (freed === 0) candidates = candidates.filter(c => this.account.data.keys.some(k => k.groupId === c.groupId));
-      }
+      // At cap, exhaust compatible keyed routes before asking for a new key.
+      const full = this.account.data.mode === 'managed' && this.account.data.keys.length >= this.o.maxKeysPerAccount;
+      const keyedFirst = (a, b) => Number(keyedGroups.has(b.groupId)) - Number(keyedGroups.has(a.groupId));
+      if (full) candidates.sort(keyedFirst);
       // The pool size bounds how many candidates one request keeps looking at;
       // it no longer doubles as a key budget.
       candidates = candidates.slice(0, Math.max(1, this.o.poolSize));
@@ -422,10 +420,16 @@ export class Router {
       // instead of reporting the first stale 404.
       if (inferable) {
         const taken = new Set(candidates.map(c => c.groupId));
-        const spare = catalogue.filter(c => !taken.has(c.groupId) && this.eligible(c, model, c.platform ?? 'openai', { requirePrice: false }));
+        const spare = catalogue.filter(c => !taken.has(c.groupId) && hasPlatformSpace(c) &&
+          this.eligible(c, model, c.platform ?? 'openai', { requirePrice: false }));
+        if (full) spare.sort(keyedFirst);
         if (spare.length) candidates = [...candidates, ...spare.slice(0, Math.max(1, this.o.poolSize))];
       }
-      const poolBlocked = beforePool.length - candidates.length;
+      if (full) candidates.sort(keyedFirst);
+      const recordEviction = gone => {
+        this.evictions.unshift({ at: this.now(), groupId: gone.groupId, name: gone.name });
+        if (this.evictions.length > 20) this.evictions.length = 20;
+      };
       let attempts = 0, keyMismatch = 0, keyBlocked = 0, firstKeyFailure = null, groupMiss = null;
       let payload = {};
       try { payload = bytes?.length ? JSON.parse(bytes) : {}; } catch { payload = {}; }
@@ -440,9 +444,11 @@ export class Router {
       for (const [index, candidate] of candidates.entries()) {
         signal.throwIfAborted();
         if (attempts >= this.o.maxAttempts) break;
+        releaseKey();
+        releaseKey = this.account.holdKey?.(candidate.groupId) ?? (() => {});
         let key;
         try {
-          key = await this.account.keyFor(candidate, this.o, signal);
+          key = await this.account.keyFor(candidate, this.o, signal, recordEviction);
         } catch (error) {
           signal.throwIfAborted();
           const failure = keyFailure(error);
@@ -579,9 +585,18 @@ export class Router {
           };
           if (!translator) observe(first.value);
           let firstPending = true;
+          const releaseStreamKey = releaseKey;
+          const finishStream = () => {
+            request.signal.removeEventListener('abort', abortStream);
+            releaseStreamKey();
+          };
+          const abortStream = () => {
+            void reader.cancel(request.signal.reason).catch(() => {}).finally(finishStream);
+          };
           const stream = new ReadableStream({
             pull: async controller => {
               try {
+                attemptSignal.throwIfAborted();
                 if (firstPending) {
                   firstPending = false;
                   if (translator) controller.enqueue(encode(translator.push(decoder.decode(first.value, { stream: true }))));
@@ -589,10 +604,12 @@ export class Router {
                   return;
                 }
                 const next = await reader.read();
+                attemptSignal.throwIfAborted();
                 if (next.done) {
                   if (translator) { const used = translator.usage(); controller.enqueue(encode(translator.end())); this.charge(candidate, used.input + used.output); }
                   else this.charge(candidate, usage.input + usage.output);
                   reader.releaseLock(); controller.close();
+                  finishStream();
                 }
                 else if (translator) controller.enqueue(encode(translator.push(decoder.decode(next.value, { stream: true }))));
                 else { observe(next.value); controller.enqueue(next.value); }
@@ -600,16 +617,25 @@ export class Router {
                 this.penalize(candidate.groupId);
                 if (session && this.sessions.get(session)?.groupId === candidate.groupId) this.sessions.delete(session);
                 await reader.cancel().catch(() => {});
+                finishStream();
                 this.recordRoute(candidate, model, 'stream_interrupted');
                 controller.error(new Error('AIHub stream interrupted; request was not replayed'));
               }
             },
-            cancel: async reason => { attempt.abort(); await reader.cancel(reason).catch(() => {}); },
+            cancel: async reason => {
+              attempt.abort();
+              await reader.cancel(reason).catch(() => {});
+              finishStream();
+            },
           });
           const out = new Headers();
           if (translator) out.set('content-type', 'text/event-stream; charset=utf-8');
           else for (const name of ['content-type', 'cache-control']) if (response.headers.has(name)) out.set(name, response.headers.get(name));
-          return new Response(stream, { status: response.status, headers: out });
+          const result = new Response(stream, { status: response.status, headers: out });
+          request.signal.addEventListener('abort', abortStream, { once: true });
+          if (request.signal.aborted) abortStream();
+          releaseKey = () => {};
+          return result;
         } catch (error) {
           clearTimeout(timer);
           attempt.abort();
@@ -632,7 +658,6 @@ export class Router {
       // words and status rather than a routing failure that hides them.
       if (groupMiss) return errorResponse(groupMiss.message, groupMiss.status);
       const notes = [];
-      if (poolBlocked > 0) notes.push(`${poolBlocked} groups need a new key but the account key limit is reached (${this.account.data.keys.length} of ${this.o.maxKeysPerAccount}); prune an idle key or raise the limit`);
       if (keyBlocked > 0) notes.push(`${keyBlocked} groups could not mint a key; the groups that already own one were tried instead`);
       if (keyMismatch > 0) notes.push(`${keyMismatch} keyed groups did not list this model in their own catalogue`);
       const note = notes.length ? `; ${notes.join('; ')}` : '';
@@ -646,7 +671,7 @@ export class Router {
     } catch {
       if (request.signal.aborted) throw request.signal.reason;
       return errorResponse(signal.aborted ? 'AIHub routing deadline exceeded' : 'AIHub catalogue unavailable or no usable route');
-    } finally { clearTimeout(budgetTimer); unlock(); }
+    } finally { clearTimeout(budgetTimer); releaseKey(); unlock(); }
   }
   // One line per changed result: tells the operator how many ids each platform
   // actually contributed, which is the fastest way to see a platform filtered out.

@@ -4,6 +4,7 @@ import { api, list, tokenFields, normalizeHall, groupInventory, ApiError } from 
 import { loadBilling } from './billing.mjs';
 import { BASE, PROVIDER } from './config.mjs';
 import { KeyError, SessionExpired } from './errors.mjs';
+import { adoptedKeyState } from './runtime.mjs';
 
 export class Account {
   constructor(data, { save, fetcher = globalThis.fetch, now = Date.now } = {}) {
@@ -13,27 +14,63 @@ export class Account {
     this.persist = save ?? (async () => {});
     this.fetcher = fetcher;
     this.now = now;
-    this.queue = Promise.resolve();
-    this.saveQueue = Promise.resolve();
+    const keyState = this.keyState = adoptedKeyState.get(data) ?? {
+      queue: Promise.resolve(), saveQueue: Promise.resolve(), keyUsers: new Map(),
+      deletingGroups: new Set(), sessions: new Map(), saveRevision: 0,
+    };
+    keyState.owner = this;
+    keyState.keys = this.data.keys;
+    keyState.pending = this.data.pending ?? keyState.pending;
+    Object.defineProperties(this.data, {
+      keys: { enumerable: true, get: () => keyState.keys, set: keys => { keyState.keys = keys; } },
+      pending: { enumerable: true, get: () => keyState.pending, set: pending => { keyState.pending = pending; } },
+    });
     this.snapshot = undefined;
     this.remoteStale = false;
     this.models = new Map();
     this.billing = undefined;
     this.billingError = undefined;
     this.audit = [];
+    this.keyUsers = keyState.keyUsers;
+    this.deletingGroups = keyState.deletingGroups;
   }
   mutate(fn, signal) {
-    const p = this.queue.then(() => { signal?.throwIfAborted(); return fn(); });
-    this.queue = p.catch(() => {});
+    const p = this.keyState.queue.then(() => {
+      signal?.throwIfAborted();
+      this.ensureCurrent();
+      return fn();
+    });
+    this.keyState.queue = p.catch(() => {});
     return waitFor(p, signal);
   }
+  ensureCurrent() {
+    if (this.keyState.owner !== this) throw new SessionExpired();
+  }
+  holdKey(groupId) {
+    this.keyUsers.set(groupId, (this.keyUsers.get(groupId) ?? 0) + 1);
+    let held = true;
+    return () => {
+      if (!held) return;
+      held = false;
+      const users = this.keyUsers.get(groupId) - 1;
+      if (users) this.keyUsers.set(groupId, users);
+      else this.keyUsers.delete(groupId);
+    };
+  }
+  keyName(groupId) {
+    return `magpie-aihub-${this.data.instanceId.slice(0, 12)}-g${groupId}`;
+  }
+  get dirty() { return this.keyState.dirty; }
   async save() {
-    this.dirty = true;
-    const revision = this.saveRevision = (this.saveRevision ?? 0) + 1;
-    const task = this.saveQueue.then(() => this.persist(structuredClone(this.data)));
-    this.saveQueue = task.catch(() => {});
-    try { await task; if (this.saveRevision === revision) this.dirty = false; }
-    catch (e) { this.dirty = true; throw e; }
+    const state = this.keyState;
+    state.dirty = true;
+    const revision = ++state.saveRevision;
+    // An issued key operation can finish after re-login. Persist its result
+    // with the current credentials and instance ID on the same save queue.
+    const task = state.saveQueue.then(() => state.owner.persist(structuredClone(state.owner.data)));
+    state.saveQueue = task.catch(() => {});
+    try { await task; if (state.saveRevision === revision) state.dirty = false; }
+    catch (e) { state.dirty = true; throw e; }
   }
   async renew(signal) {
     const result = await api('/api/v1/auth/refresh', { body: { refresh_token: this.data.refresh }, fetcher: this.fetcher, signal });
@@ -117,6 +154,7 @@ export class Account {
   async reconcileKeys(rows, signal) {
     if (this.data.mode !== 'managed' || this.data.keys.length === 0) return 0;
     const remote = rows ?? await this.ownRemoteKeys(signal);
+    signal?.throwIfAborted();
     const alive = new Set(remote.filter(row => row && row.status === 'active' && row.id !== undefined).map(row => String(row.id)));
     const kept = this.data.keys.filter(entry => entry.remoteId === undefined || alive.has(String(entry.remoteId)));
     const removed = this.data.keys.length - kept.length;
@@ -126,43 +164,67 @@ export class Account {
     this.note('reconciled', 0, `removed_${removed}`);
     return removed;
   }
-  /** Delete one key this plugin created; the caller decides which ones qualify. */
-  /**
-   * Policy-driven cleanup: give the least recently used keys back only when the
-   * account is out of slots and a model needs a group none of them serves.
-   * Keys of groups still in `keep` are untouched, keys without a usable age are
-   * left alone, and the caller decides whether this is a dry run.
-   */
   async evictIdle({ keep = new Set(), days = 7, apply = false } = {}, signal) {
-    const empty = { apply, candidates: [], deleted: [], failed: [] };
-    if (this.data.mode !== 'managed') return empty;
-    const rows = await this.ownRemoteKeys(signal);
-    const prefix = `magpie-aihub-${this.data.instanceId.slice(0, 12)}-`;
+    if (this.data.mode !== 'managed') return { apply, candidates: [], deleted: [], failed: [], stale: 0 };
+    return this.mutate(async () => {
+      const rows = await this.ownRemoteKeys(signal);
+      const stale = apply ? await this.reconcileKeys(rows, signal) : 0;
+      const outcome = await this.#evictIdle(rows, { keep, days, apply }, signal);
+      return { ...outcome, stale };
+    }, signal);
+  }
+  async #evictIdle(rows, { keep, days, apply, needed, onEvicted }, signal) {
     const cutoff = this.now() - days * 24 * 60 * 60 * 1000;
+    const protectedGroup = groupId => keep.has(groupId) || this.keyUsers.has(groupId) || this.isStickyKeyGroup?.(groupId) || this.data.pending?.groupId === groupId;
     const candidates = [];
-    for (const row of rows) {
-      const name = String(row?.name ?? '');
-      if (!name.startsWith(prefix)) continue;
-      const groupId = Number(row?.group_id ?? /-g(\d+)$/.exec(name)?.[1]);
-      if (!Number.isSafeInteger(groupId) || keep.has(groupId)) continue;
-      const created = Date.parse(row?.created_at ?? row?.createdAt ?? '');
-      const used = Date.parse(row?.last_used_at ?? row?.lastUsedAt ?? '');
-      const at = Math.max(Number.isFinite(used) ? used : 0, Number.isFinite(created) ? created : 0);
-      if (!at || at > cutoff) continue;
-      candidates.push({ id: Number(row.id), groupId, name, at });
+    for (const key of this.data.keys) {
+      const { groupId, name, remoteId } = key;
+      const id = Number(remoteId);
+      if (key.owned !== true || !Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(groupId) || groupId <= 0 || protectedGroup(groupId)) continue;
+      // Same-account sign-in can carry keys whose names contain the old instance ID.
+      if (typeof name !== 'string' || !/^magpie-aihub-[a-z0-9-]{1,12}-g\d+$/i.test(name) || !name.endsWith(`-g${groupId}`)) continue;
+      if (this.data.keys.some(other => other !== key && Number(other.remoteId) === id)) continue;
+      const matches = rows.filter(row => Number(row?.id) === id);
+      if (matches.length !== 1) continue;
+      const [row] = matches;
+      if (row.status !== 'active' || row.name !== name || Number(row.group_id) !== groupId) continue;
+      const created = Date.parse(row.created_at ?? row.createdAt ?? '');
+      const lastUsed = row.last_used_at ?? row.lastUsedAt;
+      const at = lastUsed == null ? created : Math.max(created, Date.parse(lastUsed));
+      if (Number.isFinite(at) && at <= cutoff) candidates.push({ id, groupId, name, at });
     }
-    if (!apply) return { ...empty, candidates };
+    candidates.sort((a, b) => a.at - b.at || a.id - b.id);
     const deleted = [], failed = [];
-    for (const candidate of candidates) {
-      try {
-        await this.deleteRemoteKey(candidate.id, signal);
+    const outcome = { apply, candidates, deleted, failed };
+    if (!apply || (needed !== undefined && candidates.length < needed)) return outcome;
+    try {
+      for (const candidate of candidates) {
+        signal?.throwIfAborted();
+        if (needed !== undefined && deleted.length >= needed) break;
+        this.ensureCurrent();
+        if (protectedGroup(candidate.groupId)) continue;
+        this.deletingGroups.add(candidate.groupId);
+        try {
+          // Finish an issued deletion on the mutation queue even if its caller disconnects.
+          await this.deleteRemoteKey(candidate.id);
+        } catch (error) {
+          failed.push({ ...candidate, message: String(error?.message ?? error) });
+          // An uncertain automatic deletion may already have freed a slot.
+          if (needed !== undefined) break;
+          continue;
+        } finally {
+          this.deletingGroups.delete(candidate.groupId);
+        }
         deleted.push(candidate);
-        this.data.keys = this.data.keys.filter(key => key.remoteId !== candidate.id);
+        this.data.keys = this.data.keys.filter(key => Number(key.remoteId) !== candidate.id);
+        this.forgetModels(candidate.groupId);
         this.note('evicted', candidate.groupId, 'evicted');
-      } catch (error) { failed.push({ ...candidate, message: String(error?.message ?? error) }); }
+        onEvicted?.(candidate);
+      }
+    } finally {
+      if (deleted.length) await this.save();
     }
-    if (deleted.length) await this.save();
-    return { apply, candidates, deleted, failed };
+    return outcome;
   }
   async deleteRemoteKey(id, signal) {
     return api(`/api/v1/keys/${encodeURIComponent(String(id))}`, { method: 'DELETE', token: this.data.access, fetcher: this.fetcher, signal });
@@ -188,7 +250,7 @@ export class Account {
     this.audit.push({ at: this.now(), action, groupId, code });
     if (this.audit.length > 50) this.audit.splice(0, this.audit.length - 50);
   }
-  async keyFor(candidate, o, signal) {
+  async keyFor(candidate, o, signal, onEvicted) {
     return this.mutate(async () => {
       const existing = this.data.keys.find(k => k.groupId === candidate.groupId);
       if (existing) { if (this.dirty) await this.save(); return existing; }
@@ -196,14 +258,15 @@ export class Account {
       // One cap only: the per-account key limit. The candidate pool size is a
       // routing knob, not a key budget, so it must not stop a model the account
       // is still willing to key.
-      if (this.data.keys.length >= o.maxKeysPerAccount) {
-        // Keys deleted in the AIHub console must stop counting before we refuse.
-        const dropped = await this.reconcileKeys(undefined, signal).catch(() => 0);
-        if (this.data.keys.length >= o.maxKeysPerAccount) {
-          this.note('blocked', candidate.groupId, 'key_cap_reached');
-          throw new KeyError('key_cap_reached', `专用 Key 数量已达上限 ${o.maxKeysPerAccount}（已在 AIHub 核对，其中 ${this.data.keys.length} 把仍有效${dropped ? `，清理了 ${dropped} 条失效记录` : ''}），请增大「每账户 Key 上限」或复用已有分组。`);
-        }
-      }
+      const atCap = () => this.data.keys.length >= o.maxKeysPerAccount;
+      let dropped = 0;
+      const capReached = (verified = true) => {
+        this.note('blocked', candidate.groupId, 'key_cap_reached');
+        const detail = verified
+          ? `已在 AIHub 核对，其中 ${this.data.keys.length} 把仍有效${dropped ? `，清理了 ${dropped} 条失效记录` : ''}`
+          : `本地记录有 ${this.data.keys.length} 把，暂时无法在 AIHub 核对`;
+        return new KeyError('key_cap_reached', `专用 Key 数量已达上限 ${o.maxKeysPerAccount}（${detail}），请增大「每账户 Key 上限」或复用已有分组。`);
+      };
       if (o.minBalance > 0) {
         const billing = await this.billingInfo(o, signal);
         if (typeof billing?.balance === 'number' && billing.balance < o.minBalance) {
@@ -211,37 +274,59 @@ export class Account {
           throw new KeyError('balance_too_low', `账户余额低于设定阈值 ${o.minBalance}，已停止创建新 Key。`);
         }
       }
-      const name = `magpie-aihub-${this.data.instanceId.slice(0, 12)}-g${candidate.groupId}`;
       const pending = this.data.pending;
+      const name = pending?.groupId === candidate.groupId && pending.name || this.keyName(candidate.groupId);
       if (pending && pending.groupId !== candidate.groupId) throw new KeyError('key_creation_pending', '此前创建 Key 的结果尚未确认，请先在 AIHub 检查对应记录。');
       // Only our exact instance-specific name can be recovered; unrelated keys are never adopted.
-      const recover = async () => {
-        const rows = await this.ownRemoteKeys(signal);
+      const recover = rows => {
         const found = rows.filter(k => k.name === name && Number(k.group_id) === candidate.groupId && k.status === 'active');
         if (found.length > 1) throw new KeyError('key_duplicate', '发现重复的专用 Key，请先在 AIHub 处理重复记录。');
         return found[0];
       };
       if (this.data.refresh && this.data.expires && this.data.expires <= this.now() + 30000) await this.renewSession(signal);
-      let remote = await recover();
-      if (remote) this.note('recovered', candidate.groupId, 'recovered');
+      let rows;
+      try { rows = await this.ownRemoteKeys(signal); }
+      catch (error) { signal?.throwIfAborted(); throw atCap() ? capReached(false) : error; }
+      signal?.throwIfAborted();
+      if (atCap()) dropped = await this.reconcileKeys(rows, signal);
+      let remote = recover(rows);
+      if (remote) {
+        if (atCap()) throw capReached();
+        this.note('recovered', candidate.groupId, 'recovered');
+      }
       if (!remote && pending) throw new KeyError('key_creation_pending', '此前创建 Key 的结果未知，请在 AIHub 检查；插件不会重复创建。');
       if (!remote) {
         if (!o.autoCreateKeys) throw new KeyError('key_creation_disabled', '此分组尚无专用 Key。请开启自动创建分组 Key，或手工导入该分组 Key。');
+        if (atCap() && o.evictIdleKeys) {
+          await this.#evictIdle(rows, {
+            keep: new Set([candidate.groupId]), days: o.evictIdleDays, apply: true,
+            needed: this.data.keys.length - o.maxKeysPerAccount + 1, onEvicted,
+          }, signal);
+        }
+        signal?.throwIfAborted();
+        this.ensureCurrent();
+        if (atCap()) throw capReached();
         this.data.pending = { groupId: candidate.groupId, name, idempotencyKey: randomUUID() };
         await this.save();
+        if (signal?.aborted || this.keyState.owner !== this) {
+          this.data.pending = undefined;
+          await this.save();
+          signal?.throwIfAborted();
+          this.ensureCurrent();
+        }
         // One create only. Persist pending BEFORE the request, retain it on all uncertain outcomes.
         remote = await api('/api/v1/keys', { token: this.data.access,
           body: { name, group_id: candidate.groupId }, signal, fetcher: this.fetcher,
           headers: { 'Idempotency-Key': this.data.pending.idempotencyKey },
         });
-        if (!remote?.key) remote = await recover();
+        if (!remote?.key) remote = recover(await this.ownRemoteKeys(signal));
       }
       if (!remote || typeof remote.key !== 'string' || !remote.key || !Number.isSafeInteger(Number(remote.id)) || Number(remote.group_id) !== candidate.groupId || (remote.name && remote.name !== name))
         throw new KeyError('key_creation_incomplete', 'AIHub 未返回完整的专用 Key，请检查待确认的创建记录。');
       this.note('created', candidate.groupId, 'created');
       const key = { groupId: candidate.groupId, platform: candidate.platform ?? 'openai', key: remote.key, remoteId: Number(remote.id), name, owned: true };
       this.data.keys.push(key);
-      delete this.data.pending;
+      this.data.pending = undefined;
       await this.save();
       return key;
     }, signal);
@@ -254,16 +339,23 @@ export class Account {
     if (key.models) return key.models;
     const cached = this.models.get(key.groupId);
     if (cached && this.now() - cached.at < o.refreshMs) return cached.ids;
-    const res = await this.fetcher(`${BASE}/models`, {
-      headers: { authorization: `Bearer ${key.key}`, accept: 'application/json' }, redirect: 'error',
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
-    });
-    if (!res.ok) { await res.body?.cancel(); throw new ApiError(res.status, '/v1/models'); }
-    const body = await res.json();
-    if (!Array.isArray(body.data)) throw new Error('Unsupported model list schema');
-    const ids = body.data.map(m => m.id).filter(id => typeof id === 'string');
-    this.models.set(key.groupId, { ids, at: this.now() });
-    return ids;
+    if (this.deletingGroups.has(key.groupId) || (key.owned === true && !this.data.keys.includes(key)))
+      throw new KeyError('key_unavailable', '此分组的专用 Key 已停用或正在清理。');
+    const release = this.holdKey(key.groupId);
+    try {
+      const res = await this.fetcher(`${BASE}/models`, {
+        headers: { authorization: `Bearer ${key.key}`, accept: 'application/json' }, redirect: 'error',
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
+      });
+      if (!res.ok) { await res.body?.cancel(); throw new ApiError(res.status, '/v1/models'); }
+      const body = await res.json();
+      if (!Array.isArray(body.data)) throw new Error('Unsupported model list schema');
+      const ids = body.data.map(m => m.id).filter(id => typeof id === 'string');
+      this.models.set(key.groupId, { ids, at: this.now() });
+      return ids;
+    } finally {
+      release();
+    }
   }
 }
 

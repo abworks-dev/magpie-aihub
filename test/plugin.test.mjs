@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import entry from '../index.mjs';
-import { settings, manualBundle } from '../src/config.mjs';
+import { settings, manualBundle, migrateKeyDefaults } from '../src/config.mjs';
 
 test('entry exports only supported module and registers correct config SDKs', async () => {
   assert.equal(entry.id, 'magpie-aihub');
@@ -31,17 +31,21 @@ test('manual auth bundle remains secret and loader uses dedicated internal place
   assert.equal(discovered.model.api.npm, '@ai-sdk/openai');
 });
 
-test('fresh managed auth exposes advertised models through the real provider hook without creating keys', async () => {
+test('managed discovery retains the last model list during outages without creating keys', async t => {
   const priorFetch = globalThis.fetch;
   const calls = [];
+  let now = Date.now();
+  let state = 'available';
+  t.mock.method(Date, 'now', () => now);
   globalThis.fetch = async (url, init = {}) => {
     const path = new URL(url).pathname;
     assert.equal(new URL(url).origin, 'https://aihub.top');
     assert.equal(init.method ?? 'GET', 'GET');
     assert.equal(new Headers(init.headers).get('authorization'), 'Bearer synthetic-access');
     calls.push(path);
+    if (state === 'unavailable') return new Response(null, { status: 503 });
     const fixtures = {
-      '/api/v1/groups/available': [{ id: 1, status: 'active', platform: 'openai', rate_multiplier: 0.1 }],
+      '/api/v1/groups/available': state === 'empty' ? [] : [{ id: 1, status: 'active', platform: 'openai', rate_multiplier: 0.1 }],
       '/api/v1/groups/rates': {},
       '/api/v2/public/providers': [{ group_id: 1, platform: 'openai', available: true, model_cards: [{ model: 'advertised-model', health: 'passed' }] }],
     };
@@ -56,6 +60,15 @@ test('fresh managed auth exposes advertised models through the real provider hoo
     assert.equal(models['advertised-model'].api.npm, '@ai-sdk/openai');
     assert.equal(models['advertised-model'].providerID, 'aihub-auto');
     assert.equal(calls.length, 3);
+
+    now += 11 * 60_000;
+    state = 'unavailable';
+    assert.deepEqual(await hooks.provider.models({ models: {} }, { auth }), models);
+    const other = { ...auth, key: JSON.stringify({ ...JSON.parse(auth.key), instanceId: 'other-managed', identity: 'other' }) };
+    assert.deepEqual(await hooks.provider.models({ models: {} }, { auth: other }), {});
+
+    state = 'empty';
+    assert.deepEqual(await hooks.provider.models({ models: {} }, { auth }), {});
   } finally { globalThis.fetch = priorFetch; }
 });
 
@@ -101,6 +114,8 @@ test('configuration refuses unknown secret fields and invalid numeric values', (
   assert.throws(() => settings({ breakerFailureRate: 2 }), /Invalid breakerFailureRate/);
   assert.throws(() => settings({ evictIdleDays: 0 }), /Invalid evictIdleDays/);
   assert.throws(() => settings({ evictIdleKeys: 'yes' }), /Boolean option expected/);
+  assert.throws(() => settings(migrateKeyDefaults({ keyDefaultsMigrated: 'yes' })), /Boolean option expected/);
+  assert.throws(() => settings(migrateKeyDefaults(null)), /Options must be an object/);
   assert.equal(settings({ evictIdleKeys: true, evictIdleDays: 30 }).evictIdleDays, 30);
   assert.equal(settings({ maxMultiplier: 0 }).maxMultiplier, 0);
   assert.throws(() => settings({ platformCaps: { unknown: 1 } }), /Unknown platform/);
@@ -108,6 +123,29 @@ test('configuration refuses unknown secret fields and invalid numeric values', (
   assert.deepEqual(settings({ platformCaps: { deepseek: 1 } }).platformCaps, { deepseek: 1 });
   assert.equal(settings().autoCreateKeys, false);
   assert.throws(() => manualBundle('[{"groupId":1,"key":"fake"}]'), /multiplier/);
+});
+
+test('new installations default to 32 keys with seven-day idle eviction', () => {
+  const { maxKeysPerAccount, evictIdleKeys, evictIdleDays } = settings();
+  assert.deepEqual({ maxKeysPerAccount, evictIdleKeys, evictIdleDays }, {
+    maxKeysPerAccount: 32, evictIdleKeys: true, evictIdleDays: 7,
+  });
+});
+
+test('key defaults migration aligns legacy options and preserves later edits', () => {
+  for (const maxKeysPerAccount of [8, 16]) {
+    const legacy = Object.freeze({ maxKeysPerAccount, evictIdleKeys: false, evictIdleDays: 20, poolSize: 3 });
+    const migrated = migrateKeyDefaults(legacy);
+    assert.deepEqual(migrated, {
+      maxKeysPerAccount: 32, evictIdleKeys: true, evictIdleDays: 20, poolSize: 3, keyDefaultsMigrated: true,
+    });
+    assert.deepEqual(settings(migrateKeyDefaults({ ...migrated, maxKeysPerAccount, evictIdleKeys: false })),
+      settings({ ...migrated, maxKeysPerAccount, evictIdleKeys: false }));
+  }
+  const custom = settings(migrateKeyDefaults({ maxKeysPerAccount: 12, evictIdleKeys: false }));
+  assert.equal(custom.maxKeysPerAccount, 12);
+  assert.equal(custom.evictIdleKeys, true);
+  assert.equal(settings({ maxKeysPerAccount: 16, evictIdleKeys: false }).evictIdleKeys, false);
 });
 
 test('model discovery failure keeps the provider catalogue instead of blanking it', async () => {

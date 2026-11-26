@@ -1,6 +1,6 @@
 {
   "name": "magpie-aihub",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "Magpie 的 AIHub 自动路由插件：按倍率与延迟选组，保持会话亲和，故障时在有界次数内切换。",
   "type": "module",
   "main": "./index.mjs",
@@ -61,7 +61,9 @@
       "maxAttempts": 3,
       "poolSize": 4,
       "minBalance": 0,
-      "maxKeysPerAccount": 8,
+      "maxKeysPerAccount": 32,
+      "evictIdleKeys": true,
+      "evictIdleDays": 7,
       "models": [],
       "platforms": [
         "openai",

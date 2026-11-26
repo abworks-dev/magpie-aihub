@@ -14,15 +14,19 @@ export const maskIdentity = identity => {
 };
 
 export async function monitorSnapshot(runtimes, options, now = Date.now) {
-  const accounts = [];
-  for (const { account, router } of [...runtimes.values()].slice(0, 32)) {
-    let errorCode;
-    try { await account.catalogue(options, AbortSignal.timeout(15000)); }
-    catch (error) { errorCode = error instanceof SessionExpired ? 'session_expired' : error?.status === 401 ? 'account_sign_in_required' : error?.status === 403 ? 'catalogue_access_denied' : 'catalogue_unavailable'; }
+  const signal = AbortSignal.timeout(15000);
+  const accounts = await Promise.all([...runtimes.values()].slice(0, 32).map(async ({ account, router }, index) => {
+    const [catalogue, billingResult] = await Promise.allSettled([
+      account.catalogue(options, signal),
+      account.billingInfo?.(options, signal),
+    ]);
+    const error = catalogue.status === 'rejected' ? catalogue.reason : null;
+    const errorCode = catalogue.status !== 'rejected' ? null
+      : error instanceof SessionExpired ? 'session_expired'
+      : error?.status === 401 ? 'account_sign_in_required'
+      : error?.status === 403 ? 'catalogue_access_denied' : 'catalogue_unavailable';
     router.prune();
-    let billing;
-    try { billing = await account.billingInfo(options, AbortSignal.timeout(15000)); }
-    catch { billing = undefined; }
+    const billing = billingResult.status === 'fulfilled' ? billingResult.value : undefined;
     const rows = account.directoryRows ?? account.snapshot?.rows ?? [];
     const groups = rows.slice(0, 500).map(c => {
       const reasons = [];
@@ -63,8 +67,8 @@ export async function monitorSnapshot(runtimes, options, now = Date.now) {
         selectedCount, cooldownUntil, lastUsedAt: finite(last?.at), inflight: finite(router.inflight?.get(c.groupId)) ?? 0,
       };
     });
-    accounts.push({
-      label: maskIdentity(account.data.identity) || `账户 ${accounts.length + 1}`, mode: account.data.mode,
+    return {
+      label: maskIdentity(account.data.identity) || `账户 ${index + 1}`, mode: account.data.mode,
       sourceUpdatedAt: finite(account.snapshot?.at), stale: Boolean(errorCode) || account.remoteStale === true,
       ...(errorCode ? { errorCode } : {}), groups,
       routes: (router.lastRoutes ?? []).slice(-100).map(r => ({ platform: text(r.platform), model: text(r.model), groupId: r.groupId, at: finite(r.at), outcome: text(r.outcome) })),
@@ -77,7 +81,7 @@ export async function monitorSnapshot(runtimes, options, now = Date.now) {
         groupId: key.groupId, platform: text(key.platform ?? 'openai'), owned: key.owned === true,
         lastUsedAt: finite([...router.lastRoutes].reverse().find(route => route.groupId === key.groupId)?.at),
       })),
-      evictions: (router.evictions ?? []).slice(0, 8).map(gone => ({ at: finite(gone.at), groupId: id(gone.groupId), name: text(gone.name) })),
+      evictions: (router.evictions ?? []).slice(0, 8).map(gone => ({ at: finite(gone.at), groupId: finite(gone.groupId), name: text(gone.name) })),
       keyState: { ready: account.data.keys.length, pending: account.data.pending ? 1 : 0, autoCreateKeys: options.autoCreateKeys, maxKeysPerAccount: options.maxKeysPerAccount, minBalance: options.minBalance },
       billing: billing ? {
         at: finite(billing.at), balance: finite(billing.balance), balanceKnown: billing.balanceKnown === true,
@@ -96,8 +100,8 @@ export async function monitorSnapshot(runtimes, options, now = Date.now) {
       } : null,
       billingError: account.billingError ?? null,
       keyEvents: Array.isArray(account.audit) ? account.audit.slice(-8) : [],
-    });
-  }
+    };
+  }));
   // Entry-host health lives on the router, but the list itself comes from the
   // settings, so it is reported once per page rather than per account.
   const endpoints = new Map();

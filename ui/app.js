@@ -20,7 +20,7 @@
     strategy: 'balanced', maxMultiplier: 0.16, platformCaps: {}, maxAttempts: 3, poolSize: 4,
     dailyBudget: 0, priceAlertRatio: 0.2,
     excludedGroups: [], allowedGroups: [], requirePassed: false,
-    minBalance: 0, maxKeysPerAccount: 8, keysPerPlatform: 0, reuseBias: 0.25, evictIdleKeys: false, evictIdleDays: 7,
+    minBalance: 0, maxKeysPerAccount: 32, keysPerPlatform: 0, reuseBias: 0.25, evictIdleKeys: true, evictIdleDays: 7,
     autoCreateKeys: false, bareModelIds: false, defaultApi: 'responses', models: [], monitorPort: 19871,
     endpoints: [{ url: 'https://aihub.top', label: '默认' }], endpointMode: 'failover', endpointCooldownMs: 60000,
     spread: 'off', spreadBand: 1.1, maxInflightPerGroup: 0,
@@ -139,12 +139,14 @@
     if (typeof raw.minBalance === 'number' && Number.isFinite(raw.minBalance) && raw.minBalance >= 0 && raw.minBalance <= 100000) result.minBalance = raw.minBalance;
     if (typeof raw.dailyBudget === 'number' && Number.isFinite(raw.dailyBudget) && raw.dailyBudget >= 0 && raw.dailyBudget <= 1000000) result.dailyBudget = raw.dailyBudget;
     if (typeof raw.priceAlertRatio === 'number' && Number.isFinite(raw.priceAlertRatio) && raw.priceAlertRatio >= 0.01 && raw.priceAlertRatio <= 10) result.priceAlertRatio = raw.priceAlertRatio;
-    if (validInteger(raw.maxKeysPerAccount, 1, 32)) result.maxKeysPerAccount = raw.maxKeysPerAccount;
+    const migrated = raw.keyDefaultsMigrated === true;
+    if (validInteger(raw.maxKeysPerAccount, 1, 32) && (migrated || ![8, 16].includes(raw.maxKeysPerAccount))) result.maxKeysPerAccount = raw.maxKeysPerAccount;
+    if (migrated && typeof raw.evictIdleKeys === 'boolean') result.evictIdleKeys = raw.evictIdleKeys;
     if (validInteger(raw.keysPerPlatform, 0, 32)) result.keysPerPlatform = raw.keysPerPlatform;
     if (typeof raw.reuseBias === 'number' && Number.isFinite(raw.reuseBias) && raw.reuseBias >= 0 && raw.reuseBias <= 5) result.reuseBias = raw.reuseBias;
     if (validInteger(raw.evictIdleDays, 1, 90)) result.evictIdleDays = raw.evictIdleDays;
     for (const key of ['excludedGroups', 'allowedGroups']) if (groupList(raw[key])) result[key] = [...new Set(raw[key])];
-    for (const key of ['requirePassed', 'autoCreateKeys', 'bareModelIds', 'evictIdleKeys']) if (typeof raw[key] === 'boolean') result[key] = raw[key];
+    for (const key of ['requirePassed', 'autoCreateKeys', 'bareModelIds']) if (typeof raw[key] === 'boolean') result[key] = raw[key];
     if (['responses', 'chat'].includes(raw.defaultApi)) result.defaultApi = raw.defaultApi;
     for (const [key, [min, max]] of Object.entries(advancedRanges)) if (validInteger(raw[key], min, max)) result[key] = raw[key];
     if (Array.isArray(raw.platforms) && raw.platforms.length && raw.platforms.every(id => platforms.includes(id))) result.platforms = [...new Set(raw.platforms)];
@@ -524,7 +526,8 @@
     if (!token) { renderMonitorHint(true); return; }
     state.loading = true;
     $('monitor-refresh').disabled = true;
-    $('monitor-body').innerHTML = '<p class="empty">正在读取本机快照…</p>';
+    if (state.snapshot) $('monitor-updated').textContent = '正在刷新，显示上次结果';
+    else $('monitor-body').innerHTML = '<p class="empty">正在读取本机快照…</p>';
     try {
       const url = new URL('snapshot', globalThis.location.href);
       let response;
@@ -556,11 +559,18 @@
         const label = code ? `快照接口返回 ${response.status}（${code}）` : `快照接口返回 ${response.status}`;
         throw new Error(hint ? `${label}：${hint}` : label);
       }
-      state.snapshot = await response.json();
+      const snapshot = await response.json();
+      if (snapshot?.schemaVersion !== 1 || !Array.isArray(snapshot.accounts)) throw new Error('快照格式无效');
+      state.snapshot = snapshot;
+      state.snapshotError = '';
       renderSnapshot();
       renderGroupPicker();
     } catch (error) {
-      state.snapshot = null;
+      if (state.snapshot) {
+        state.snapshotError = `刷新失败，显示上次结果（${errorText(error)}）`;
+        $('monitor-updated').textContent = state.snapshotError;
+        return;
+      }
       if (isConnectionFailure(error)) {
         renderServiceGap();
         return;
@@ -766,7 +776,7 @@
     const eligible = rows.filter(row => row.eligible === true).length;
     const stale = accountsList.some(account => account.stale);
     const errorCode = accountsList.find(account => account.errorCode)?.errorCode ?? '';
-    $('monitor-updated').textContent = state.snapshot?.generatedAt ? `更新于 ${clock(state.snapshot.generatedAt)}` : '';
+    $('monitor-updated').textContent = state.snapshotError || (state.snapshot?.generatedAt ? `更新于 ${clock(state.snapshot.generatedAt)}` : '');
     renderAccounts(accountsList);
     renderEndpointHealth();
 
@@ -887,7 +897,7 @@
     try {
       const previous = optionsObject(await bounded(state.bridge.options.get(), '读取插件选项超时'));
       const previousModels = Array.isArray(previous.models) ? previous.models : [];
-      const options = { ...safeOptions(previous), ...changes };
+      const options = { ...safeOptions(previous), ...changes, keyDefaultsMigrated: true };
       options.models = preserveModelLimits(changes.models, previousModels);
       await bounded(state.bridge.options.set(options), '保存插件选项超时');
       setDirty(false);

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { Account } from '../src/account.mjs';
 import { Router } from '../src/router.mjs';
 import { BASE, ORIGIN, settings } from '../src/config.mjs';
 
@@ -345,28 +346,98 @@ test('ordinary 400 and 404 inference errors are returned without trying another 
   }
 });
 
-test('a full account pool asks the eviction policy once before giving up on the model', async () => {
-  const { router, account } = fixture(undefined, { maxKeysPerAccount: 1, evictIdleKeys: true, evictIdleDays: 3 });
-  account.data = { mode: 'managed', instanceId: 'test-instance', keys: [{ groupId: 77, key: 'old' }] };
-  const seen = [];
-  account.evictIdle = async ({ keep, days, apply }) => {
-    seen.push({ keep: [...keep].sort(), days, apply });
-    account.data.keys = [];
-    return { deleted: [{ groupId: 77, name: 'magpie-aihub-test-instanc-g77' }] };
-  };
-  const { response } = await consume(router, request());
-  assert.equal(response.status, 200);
-  assert.deepEqual(seen, [{ keep: [1, 2], days: 3, apply: true }]);
+function fullManagedRouter(catalogue, options = {}, respond) {
+  const now = () => Date.parse('2026-11-18T00:00:00Z');
+  const name = 'magpie-aihub-test-instanc-g77';
+  const changes = [], calls = [];
+  const rows = [{ id: 177, group_id: 77, name, status: 'active', created_at: '2026-10-01T00:00:00Z' }];
+  const account = new Account({
+    version: 1, mode: 'managed', instanceId: 'test-instance-123', access: 'management-access',
+    keys: [{ groupId: 77, remoteId: 177, name, key: 'route-key-77', owned: true }],
+  }, { now, fetcher: async (url, init) => {
+    if (init.method === 'DELETE') {
+      const id = Number(new URL(url).pathname.split('/').at(-1));
+      changes.push(['delete', id]);
+      rows.splice(rows.findIndex(row => row.id === id), 1);
+      return Response.json({});
+    }
+    if (init.method === 'POST') {
+      const { name: nextName, group_id } = JSON.parse(init.body);
+      changes.push(['create', group_id]);
+      const created = { id: 100 + group_id, key: `route-key-${group_id}`, name: nextName, group_id, status: 'active' };
+      rows.push(created);
+      return Response.json(created);
+    }
+    return Response.json(rows);
+  } });
+  account.catalogue = async () => catalogue;
+  account.modelIds = async () => [model, 'other-model'];
+  const router = new Router(account, settings({ maxKeysPerAccount: 1, autoCreateKeys: true, ...options }), {
+    now,
+    fetcher: async (_url, init) => {
+      const group = groupOf(init);
+      calls.push(group);
+      return respond?.(group) ?? new Response(`group-${group}`);
+    },
+  });
+  return { router, changes, calls };
+}
+
+test('a request reuses a compatible keyed group before a cheaper unkeyed group at cap', async () => {
+  const { router, changes, calls } = fullManagedRouter([candidate(1), candidate(77)], {
+    poolSize: 1, maxAttempts: 1, strategy: 'speed',
+  });
+  assert.equal((await consume(router, request())).text, 'group-77');
+  assert.deepEqual(calls, [77]);
+  assert.deepEqual(changes, []);
+  assert.deepEqual(router.evictions, []);
+});
+
+test('a request records only the cleanup done for an actual new key at cap', async () => {
+  const { router, changes } = fullManagedRouter([candidate(1)]);
+  assert.equal((await consume(router, request())).text, 'group-1');
+  assert.deepEqual(changes, [['delete', 177], ['create', 1]]);
   assert.deepEqual(router.evictions.map(gone => gone.groupId), [77]);
 });
 
-test('the eviction policy stays off unless it is switched on', async () => {
-  const { router, account } = fixture(undefined, { maxKeysPerAccount: 1 });
-  account.data = { mode: 'managed', instanceId: 'test-instance', keys: [{ groupId: 77, key: 'old' }] };
-  let asked = 0;
-  account.evictIdle = async () => { asked += 1; return { deleted: [] }; };
-  await consume(router, request());
-  assert.equal(asked, 0);
+test('disabling automatic cleanup preserves the key cap response without deleting', async () => {
+  const { router, changes, calls } = fullManagedRouter([candidate(1)], { evictIdleKeys: false });
+  const { response, text } = await consume(router, request());
+  assert.equal(response.status, 503);
+  assert.equal(JSON.parse(text).error.code, 'key_cap_reached');
+  assert.deepEqual(changes, []);
+  assert.deepEqual(calls, []);
+});
+
+test('an active sticky session protects its key until the session expires', async () => {
+  const { router, changes } = fullManagedRouter([
+    candidate(77, { models: [model] }), candidate(1, { models: ['other-model'] }),
+  ]);
+  await consume(router, request({}, { 'x-aihub-auto-session': 'sticky' }));
+  assert.equal(router.sessions.size, 1);
+  const blocked = await consume(router, request({ model: 'other-model' }));
+  assert.equal(JSON.parse(blocked.text).error.code, 'key_cap_reached');
+  assert.deepEqual(changes, []);
+  router.sessions.values().next().value.until = router.now();
+  assert.equal((await consume(router, request({ model: 'other-model' }))).text, 'group-1');
+  assert.deepEqual(changes, [['delete', 177], ['create', 1]]);
+});
+
+test('an active stream protects its key until the client cancels the response', async () => {
+  const { router, changes } = fullManagedRouter([
+    candidate(77, { models: [model] }), candidate(1, { models: ['other-model'] }),
+  ], {}, group => group === 77 ? new Response(new ReadableStream({
+    start(controller) { controller.enqueue(new TextEncoder().encode('data: {}\n\n')); },
+  })) : new Response('replacement'));
+  const stream = await router.fetch(request({ stream: true }));
+  assert.equal(stream.status, 200);
+  const blocked = await consume(router, request({ model: 'other-model' }));
+  assert.equal(blocked.response.status, 503);
+  assert.equal(JSON.parse(blocked.text).error.code, 'key_cap_reached');
+  assert.deepEqual(changes, []);
+  await stream.body.cancel();
+  assert.equal((await consume(router, request({ model: 'other-model' }))).text, 'replacement');
+  assert.deepEqual(changes, [['delete', 177], ['create', 1]]);
 });
 
 test('a stale model card on one platform hands the bare id to another platform', async () => {

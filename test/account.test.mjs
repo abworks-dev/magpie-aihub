@@ -14,26 +14,145 @@ const pathOf = url => new URL(url).pathname;
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 
 // Every Account has an injected fetcher. Responses are local Web API objects only.
-test('idle keys are evicted only past the window, past the keep set, and only with apply', async () => {
-  const now = Date.parse('2026-11-18T00:00:00Z');
-  const account = new Account(managed({ keys: [{ groupId: 2, platform: 'openai', key: 'k2', remoteId: 22, name: 'magpie-aihub-test-instanc-g2', owned: true }] }), {
-    now: () => now, save: async () => {}, fetcher: async () => json([]),
+const oldKey = (groupId, extra = {}) => ({
+  groupId, platform: 'openai', key: `key-${groupId}`, remoteId: groupId + 100,
+  name: `magpie-aihub-test-instanc-g${groupId}`, owned: true, ...extra,
+});
+const remoteKey = (groupId, extra = {}) => ({
+  id: groupId + 100, group_id: groupId, name: oldKey(groupId).name, status: 'active',
+  created_at: '2026-10-01T00:00:00Z', ...extra,
+});
+function idleFixture(keys, rows, { beforeDelete, pending } = {}) {
+  const mutations = [], saved = [];
+  const account = new Account(managed({ keys, pending }), {
+    now: () => Date.parse('2026-11-18T00:00:00Z'),
+    save: async data => { saved.push(structuredClone(data)); },
+    fetcher: async (url, init) => {
+      if (pathOf(url) === '/api/v1/auth/me') return json({ balance: 1 });
+      if (pathOf(url) === '/api/v1/usage/stats') return json({});
+      if (pathOf(url) === '/api/v1/user/platform-quotas') return json({});
+      if (init.method === 'GET') return json(rows);
+      if (init.method === 'DELETE') {
+        const id = Number(pathOf(url).split('/').at(-1));
+        mutations.push(['delete', id]);
+        await beforeDelete?.(id);
+        rows.splice(rows.findIndex(row => row.id === id), 1);
+        return json({});
+      }
+      const body = JSON.parse(init.body);
+      mutations.push(['create', body.group_id]);
+      const created = { ...remoteKey(body.group_id), key: `key-${body.group_id}`, created_at: '2026-11-18T00:00:00Z' };
+      rows.push(created);
+      return json(created);
+    },
   });
-  account.ownRemoteKeys = async () => [
-    { id: 11, group_id: 1, name: 'magpie-aihub-test-instanc-g1', created_at: '2026-10-01T00:00:00Z' },
-    { id: 12, group_id: 2, name: 'magpie-aihub-test-instanc-g2', created_at: '2026-10-01T00:00:00Z' },
-    { id: 13, group_id: 3, name: 'magpie-aihub-test-instanc-g3', created_at: '2026-11-17T00:00:00Z' },
-    { id: 14, group_id: 4, name: 'someone-else', created_at: '2026-10-01T00:00:00Z' },
-    { id: 15, group_id: 5, name: 'magpie-aihub-test-instanc-g5' },
-  ];
-  const removed = [];
-  account.deleteRemoteKey = async id => { removed.push(id); };
-  const dry = await account.evictIdle({ keep: new Set([2]), days: 7 });
+  return { account, mutations, saved };
+}
+
+test('manual cleanup previews and deletes only idle keys with matching ownership, age and group', async () => {
+  const inheritedName = 'magpie-aihub-beforelogin-g1';
+  const { account, mutations, saved } = idleFixture([
+    oldKey(1, { name: inheritedName }), oldKey(2), oldKey(3), oldKey(4, { owned: false }), oldKey(5), oldKey(6), oldKey(7), oldKey(8), oldKey(9),
+  ], [
+    remoteKey(1, { name: inheritedName }), remoteKey(2), remoteKey(3, { last_used_at: '2026-11-17T00:00:00Z' }), remoteKey(4),
+    remoteKey(5, { created_at: undefined }), remoteKey(6, { name: `${oldKey(6).name}-different` }),
+    remoteKey(7, { group_id: 17 }), remoteKey(8), remoteKey(9), remoteKey(10),
+  ], { pending: { groupId: 9 } });
+  const keep = new Set([2]);
+  const release = account.holdKey(8);
+  const dry = await account.evictIdle({ keep, days: 7 });
   assert.deepEqual(dry.candidates.map(row => row.groupId), [1]);
-  assert.deepEqual(removed, []);
-  const applied = await account.evictIdle({ keep: new Set([2]), days: 7, apply: true });
+  assert.deepEqual(mutations, []);
+  assert.deepEqual(saved, []);
+  const applied = await account.evictIdle({ keep, days: 7, apply: true });
+  release();
   assert.deepEqual(applied.deleted.map(row => row.groupId), [1]);
-  assert.deepEqual(removed, [11]);
+  assert.deepEqual(mutations, [['delete', 101]]);
+  assert.deepEqual(saved.at(-1).keys.map(key => key.groupId), [2, 3, 4, 5, 6, 7, 8, 9]);
+});
+
+test('automatic cleanup removes the fewest idle keys in oldest-use order before one create', async () => {
+  const { account, mutations } = idleFixture([oldKey(1), oldKey(2), oldKey(3), oldKey(4)], [
+    remoteKey(1, { last_used_at: '2026-10-29T00:00:00Z' }),
+    remoteKey(2, { created_at: '2026-09-02T00:00:00Z' }),
+    remoteKey(3, { created_at: '2026-09-01T00:00:00Z' }),
+    remoteKey(4, { last_used_at: '2026-11-15T00:00:00Z' }),
+  ]);
+  const evicted = [];
+  await account.keyFor(group, options({ maxKeysPerAccount: 3 }), undefined, row => evicted.push(row.groupId));
+  assert.deepEqual(mutations, [['delete', 103], ['delete', 102], ['create', 42]]);
+  assert.deepEqual(evicted, [3, 2]);
+  assert.deepEqual(account.data.keys.map(key => key.groupId), [1, 4, 42]);
+});
+
+test('automatic cleanup avoids deletion when cap is reconciled or creation cannot proceed', async t => {
+  for (const [name, overwrite, rows, pending, code] of [
+    ['disabled cleanup', { evictIdleKeys: false }, [remoteKey(1)], undefined, 'key_cap_reached'],
+    ['disabled creation', { autoCreateKeys: false }, [remoteKey(1)], undefined, 'key_creation_disabled'],
+    ['low balance', { minBalance: 2 }, [remoteKey(1)], undefined, 'balance_too_low'],
+    ['unresolved creation', {}, [remoteKey(1)], { groupId: 42 }, 'key_creation_pending'],
+    ['recoverable key at cap', {}, [remoteKey(1), remoteKey(42, { key: 'recovered' })], undefined, 'key_cap_reached'],
+    ['duplicate remote keys', {}, [remoteKey(1), remoteKey(42), remoteKey(42, { id: 222 })], undefined, 'key_duplicate'],
+    ['stale key', {}, [], undefined, undefined],
+  ]) {
+    await t.test(name, async () => {
+      const { account, mutations } = idleFixture([oldKey(1)], rows, { pending });
+      const key = account.keyFor(group, options({ maxKeysPerAccount: 1, ...overwrite }));
+      if (code) await assert.rejects(key, { code });
+      else await key;
+      assert.deepEqual(mutations, code ? [] : [['create', 42]]);
+    });
+  }
+});
+
+test('an unavailable remote list reports the local cap without claiming it was verified', async () => {
+  const account = new Account(managed({ keys: [oldKey(1)] }), {
+    fetcher: async (_url, init) => {
+      assert.equal(init.method, 'GET');
+      return json({}, 503);
+    },
+  });
+  await assert.rejects(account.keyFor(group, options({ maxKeysPerAccount: 1 })), {
+    code: 'key_cap_reached', message: /暂时无法在 AIHub 核对/u,
+  });
+});
+
+test('key-backed model discovery protects an idle key through its fetch', async () => {
+  const listStarted = deferred(), finishList = deferred();
+  const { account, mutations } = idleFixture([oldKey(1)], [remoteKey(1)]);
+  const managementFetch = account.fetcher;
+  account.fetcher = async (url, init) => {
+    if (pathOf(url) !== '/v1/models') return managementFetch(url, init);
+    listStarted.resolve();
+    await finishList.promise;
+    return json({ data: [{ id: 'model' }] });
+  };
+  const list = account.modelIds(account.data.keys[0], options());
+  await listStarted.promise;
+  await assert.rejects(account.keyFor(group, options({ maxKeysPerAccount: 1 })), { code: 'key_cap_reached' });
+  assert.deepEqual(mutations, []);
+  finishList.resolve();
+  assert.deepEqual(await list, ['model']);
+  await account.keyFor(group, options({ maxKeysPerAccount: 1 }));
+  assert.deepEqual(mutations, [['delete', 101], ['create', 42]]);
+});
+
+test('an aborted replacement finishes its issued deletion on the queue before another request can create', async () => {
+  const deleting = deferred(), finishDelete = deferred();
+  const { account, mutations, saved } = idleFixture([oldKey(1)], [remoteKey(1)], {
+    beforeDelete: async () => { deleting.resolve(); await finishDelete.promise; },
+  });
+  const controller = new AbortController();
+  const config = options({ maxKeysPerAccount: 1 });
+  const first = account.keyFor(group, config, controller.signal);
+  await deleting.promise;
+  controller.abort();
+  await assert.rejects(first, { name: 'AbortError' });
+  const second = account.keyFor({ groupId: 43 }, config);
+  finishDelete.resolve();
+  await second;
+  assert.deepEqual(mutations, [['delete', 101], ['create', 43]]);
+  assert.deepEqual(saved.map(snapshot => snapshot.keys.map(key => key.groupId)), [[], [], [43]]);
 });
 
 test('pending creation must be durably saved before POST, and create sends only name and group_id', async () => {

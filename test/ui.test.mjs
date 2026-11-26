@@ -317,6 +317,36 @@ test('a non-connection error keeps its message and is not retried', async () => 
   assert.match(h.node('monitor-body').innerHTML, /快照接口返回 500/);
 });
 
+test('a failed refresh keeps the supplier list until a successful refresh replaces it', async () => {
+  const updated = {
+    ...snapshot,
+    accounts: snapshot.accounts.map(account => ({
+      ...account, groups: account.groups.map(group => ({ ...group, name: 'New fixture group' })),
+    })),
+  };
+  const responses = [
+    { ok: true, json: async () => snapshot },
+    { ok: false, status: 503, json: async () => ({}) },
+    { ok: true, json: async () => updated },
+  ];
+  const h = harness({
+    pathname: '/_magpie/plugin/tok/_magpie/service/', token: 'served-token',
+    fetchImpl: async () => responses.shift(),
+  });
+  await settle();
+  h.clickTab('monitor');
+  await settle();
+  assert.match(h.node('monitor-body').innerHTML, /Fixture group/);
+
+  await h.node('monitor-refresh').handlers.click();
+  assert.match(h.node('monitor-body').innerHTML, /Fixture group/);
+  assert.match(h.node('monitor-updated').textContent, /刷新失败.*503/);
+
+  await h.node('monitor-refresh').handlers.click();
+  assert.match(h.node('monitor-body').innerHTML, /New fixture group/);
+  assert.doesNotMatch(h.node('monitor-updated').textContent, /刷新失败/);
+});
+
 test('a rejected page token reloads the page once instead of showing a bare 403', async () => {
   const h = harness({
     pathname: '/_magpie/plugin/tok/_magpie/service/', token: 'test-token',

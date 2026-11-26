@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { PROVIDER, BASE, settings, manualBundle, configModels } from './src/config.mjs';
+import { PROVIDER, BASE, settings, migrateKeyDefaults, manualBundle, configModels } from './src/config.mjs';
 import { login, setOrigins } from './src/api.mjs';
 import { Account, accountSaver } from './src/account.mjs';
 import { Router } from './src/router.mjs';
@@ -10,32 +10,18 @@ import { monitorSnapshot } from './src/telemetry.mjs';
 import { usageCard } from './src/usage.mjs';
 import { adoptRuntime } from './src/runtime.mjs';
 
-/**
- * Keys this plugin created that no live group still routes through. The dry run
- * is the default: the page asks with apply:true only after the user confirms.
- */
-async function pruneIdleKeys(runtimes, apply) {
+async function pruneIdleKeys(runtimes, days, apply) {
   const result = { apply, candidates: [], deleted: 0, stale: 0, failed: [] };
-  for (const item of runtimes.values()) {
-    const account = item?.account;
-    if (!account || account.data?.mode !== 'managed') continue;
-    let remote;
-    try { remote = await account.ownRemoteKeys(); }
-    catch (error) { result.failed.push({ step: 'list', message: String(error?.message ?? error) }); continue; }
-    // Drop local records whose key no longer exists in AIHub before judging what is idle.
-    try { result.stale += await account.reconcileKeys(remote); }
-    catch (error) { result.failed.push({ step: 'reconcile', message: String(error?.message ?? error) }); }
-    const inUse = new Set((account.data.keys ?? []).map(key => Number(key?.groupId)).filter(Number.isFinite));
-    for (const key of remote) {
-      const name = String(key?.name ?? '');
-      const groupId = Number(key?.group_id ?? key?.groupId ?? /-g(\d+)$/.exec(name)?.[1]);
-      if (!name.startsWith('magpie-aihub-')) continue;        // never touch a key the user made
-      if (inUse.has(groupId)) continue;                        // a live group still uses it
-      const entry = { id: key?.id, name, groupId: Number.isFinite(groupId) ? groupId : null };
-      result.candidates.push(entry);
-      if (!apply) continue;
-      try { await account.deleteRemoteKey(key.id); result.deleted += 1; }
-      catch (error) { result.failed.push({ ...entry, message: String(error?.message ?? error) }); }
+  for (const { account } of runtimes.values()) {
+    if (account.data.mode !== 'managed') continue;
+    try {
+      const cleanup = await account.evictIdle({ days, apply });
+      result.candidates.push(...cleanup.candidates);
+      result.deleted += cleanup.deleted.length;
+      result.stale += cleanup.stale ?? 0;
+      result.failed.push(...cleanup.failed);
+    } catch (error) {
+      result.failed.push({ step: 'cleanup', message: String(error?.message ?? error) });
     }
   }
   return result;
@@ -45,7 +31,7 @@ async function pruneIdleKeys(runtimes, apply) {
 const descriptorApi = (id, fallback) => (id.startsWith('gemini::') ? 'responses' : fallback);
 
 async function AIHubPlugin({ client }, initialOptions = {}) {
-  const options = settings(initialOptions);
+  const options = settings(migrateKeyDefaults(initialOptions));
   // Console calls (sign-in, balance, keys) follow the same entry hosts as inference.
   setOrigins(options.endpoints.map(row => row.url));
   const runtimes = new Map();
@@ -57,7 +43,7 @@ async function AIHubPlugin({ client }, initialOptions = {}) {
     await startService({
       port: options.monitorPort,
       getSnapshot: () => monitorSnapshot(runtimes, options),
-      prune: async ({ apply } = {}) => pruneIdleKeys(runtimes, apply === true),
+      prune: async ({ apply } = {}) => pruneIdleKeys(runtimes, options.evictIdleDays, apply === true),
       getIdentities: () => [...runtimes.values()].slice(0, 32).map(item => item.account?.data?.identity ?? ''),
       getMetrics: () => {
         const items = [...runtimes.values()];
@@ -159,8 +145,8 @@ async function AIHubPlugin({ client }, initialOptions = {}) {
       id: PROVIDER,
       models: async (provider, { auth, signal } = {}) => {
         if (options.models.length || !auth?.key) return provider.models ?? {};
-        const ids = await runtime(auth)
-          .router.discover(signal)
+        const item = runtime(auth);
+        const ids = await item.router.discover(signal)
           .catch(error => {
             // A dead session must not blank the provider catalogue: keep the models
             // Magpie already knows so the connection stays selectable and retryable.
@@ -172,9 +158,12 @@ async function AIHubPlugin({ client }, initialOptions = {}) {
             }
             return null;
           });
-        if (!ids) return provider?.models ?? {};
+        if (!ids) {
+          const known = provider?.models ?? {};
+          return Object.keys(known).length ? known : item.lastDiscoveredModels ?? known;
+        }
         lastDiscoveryError = '';
-        return Object.fromEntries(ids.map(id => {
+        const models = Object.fromEntries(ids.map(id => {
           const descriptor = modelDescriptor(id, descriptorApi(id, options.defaultApi));
           const key = options.bareModelIds ? descriptor.modelId : id;
           const guessed = defaultLimits(descriptor.platform, descriptor.modelId);
@@ -187,6 +176,8 @@ async function AIHubPlugin({ client }, initialOptions = {}) {
           variants: {}, headers: { 'x-aihub-auto-platform': descriptor.platform }, options: {}, release_date: '', status: 'active',
         }];
         }));
+        item.lastDiscoveredModels = models;
+        return models;
       },
     },
     'chat.headers': async (input, output) => {
