@@ -643,12 +643,14 @@
         + '<button type="button" class="account-eye" data-account="' + index + '" title="显示完整账号" aria-label="显示完整账号">' + EYE_OPEN + '</button>'
         + '<span class="pill pill-neutral">' + mode + '</span>'
         + (account.stale ? '<span class="pill pill-off">目录较旧</span>' : '') + '</header>';
+      const expired = account.mode === 'managed' && (
+        account.errorCode === 'session_expired' || account.billingError === 'billing_session_expired'
+      );
+      const hint = expired ? '<p class="account-empty">登录已过期。在 Magpie「供应商 → AIHub Auto」打开该账号，点「重新登录」并使用同一个邮箱，然后回此页刷新。</p>' : '';
       if (!billing) {
         const why = account.billingError ? '余额读取失败：' + escapeHtml(billingLabels[account.billingError] ?? account.billingError)
           : account.mode === 'manual' ? '手工 Key 模式不读取账户余额' : '余额尚未读取';
-        const dead = account.billingError === 'billing_session_expired' || account.billingError === 'billing_sign_in_required';
-        const hint = dead ? '<p class="account-empty">在 Magpie「供应商 → AIHub Auto」里重新登录，回到本页点「刷新」。</p>' : '';
-        return '<article class="account-card">' + head + '<p class="account-empty">' + why + '</p>' + hint + '</article>';
+        return '<article class="account-card">' + head + (hint || '<p class="account-empty">' + why + '</p>') + '</article>';
       }
       const platforms = Array.isArray(billing.platforms) ? billing.platforms : [];
       const total = pick => platforms.reduce((sum, item) => sum + (num(item?.[pick]) ?? 0), 0);
@@ -676,7 +678,7 @@
           + ' · #' + escapeHtml(String(key.groupId ?? '—')) + '</span><span class="cell-sub">'
           + (key.owned ? '插件创建' : '手工') + ' · ' + (key.lastUsedAt ? '用于 ' + clock(key.lastUsedAt) : '从未使用')
           + '</span></li>').join('') + '</ul></details>' : '';
-      return '<article class="account-card">' + head
+      return '<article class="account-card">' + head + hint
         + '<div class="account-balance"><span class="account-figure"' + (billing.balanceKnown === false ? ' title="该账户未返回余额字段（可能是组织或配额账号）"' : '') + '>' + money(billing.balance) + '</span>'
         + '<span class="account-sub">可用余额 · 冻结 ' + money(billing.frozen) + '</span>'
         + (billing.balanceKnown === false ? '<span class="account-note">该账户未返回余额字段（组织/配额账号）</span>' : '')

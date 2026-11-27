@@ -11,16 +11,17 @@ const number = value => {
 const text = value => typeof value === 'string' ? value.replace(/[\u0000-\u001f]/g, '').slice(0, 80) : '';
 
 export async function loadBilling(account, signal) {
+  const accountCheck = account.call('/api/v1/auth/me', { signal });
+  const optionalRead = path => account.call(path, { signal }).catch(async error => {
+    if (error?.status === 404 || error?.status === 403) return null;
+    // Give a failed account check priority over an earlier quota failure.
+    await accountCheck;
+    throw error;
+  });
   const [me, stats, quotas] = await Promise.all([
-    account.call('/api/v1/auth/me', { signal }),
-    account.call('/api/v1/usage/stats', { signal }).catch(error => {
-      if (error?.status === 404 || error?.status === 403) return null;
-      throw error;
-    }),
-    account.call('/api/v1/user/platform-quotas', { signal }).catch(error => {
-      if (error?.status === 404 || error?.status === 403) return null;
-      throw error;
-    }),
+    accountCheck,
+    optionalRead('/api/v1/usage/stats'),
+    optionalRead('/api/v1/user/platform-quotas'),
   ]);
   const rows = Array.isArray(quotas?.platform_quotas) ? quotas.platform_quotas : [];
   const balance = number(me?.balance);

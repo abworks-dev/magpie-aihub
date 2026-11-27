@@ -206,6 +206,22 @@ test('an overdrawn wallet reads -$0.10 on the monitor page, not a dash', async (
   assert.doesNotMatch(cards, /\$-0\.10/, 'the sign must not trail the dollar sign');
 });
 
+test('monitor identifies the account to reauthenticate even while its last balance is visible', async () => {
+  const accounts = [
+    { ...snapshot.accounts[0], label: 'Expired', billingError: 'billing_session_expired', billing: { balance: 15, balanceKnown: true } },
+    { ...snapshot.accounts[0], label: 'Temporary', billingError: 'billing_unavailable' },
+  ];
+  const h = harness({ pathname: '/_magpie/plugin/tok/_magpie/service/', token: 'test-token',
+    fetchImpl: async () => ({ ok: true, json: async () => ({ ...snapshot, accounts }) }),
+  });
+  await settle();
+  h.clickTab('monitor');
+  await settle(); await settle();
+  const [expired, temporary] = h.node('monitor-accounts').innerHTML.split('</article>');
+  assert.match(expired, /Expired.*「重新登录」.*\$15\.00/s);
+  assert.doesNotMatch(temporary, /重新登录/);
+});
+
 test('the placeholder token on the static page still opens the plugin service', async () => {
   const h = harness({ service: '_magpie/service/', token: '__AIHUB_SERVICE_TOKEN__' });
   await settle();

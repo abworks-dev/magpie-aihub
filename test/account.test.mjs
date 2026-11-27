@@ -560,6 +560,25 @@ test('billing keeps nulls when usage endpoints are unavailable and caches the re
   assert.equal(reads, 1);
 });
 
+test('a delayed account 401 takes priority over an earlier billing endpoint failure', async () => {
+  const account = new Account(managed({ refresh: '' }), {
+    save: async () => {},
+    fetcher: async url => {
+      switch (pathOf(url)) {
+        case '/api/v1/auth/me':
+          await new Promise(resolve => setImmediate(resolve));
+          return json({ message: 'unauthorized' }, 401);
+        case '/api/v1/usage/stats':
+          return json({ message: 'unavailable' }, 503);
+        default:
+          return json({ platform_quotas: [] });
+      }
+    },
+  });
+  assert.equal(await account.billingInfo(options()), undefined);
+  assert.equal(account.billingError, 'billing_session_expired');
+});
+
 test('a rejected refresh reports an expired session instead of a bare 401', async () => {
   const account = new Account(managed(), { save: async () => {}, fetcher: async () => json({ error: 'expired' }, 401) });
   await assert.rejects(account.call('/api/v1/groups/available'), error =>

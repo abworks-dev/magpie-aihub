@@ -148,6 +148,37 @@ test('key defaults migration aligns legacy options and preserves later edits', (
   assert.equal(settings({ maxKeysPerAccount: 16, evictIdleKeys: false }).evictIdleKeys, false);
 });
 
+test('only the refused account requests native re-login and signing in restores its usage', async t => {
+  const hooks = await entry.server({ client: {} });
+  const expired = { type: 'api', key: JSON.stringify({ version: 1, mode: 'managed', instanceId: 'expired', identity: 'a@example.test', access: 'old', refresh: 'refused', keys: [] }) };
+  const other = { type: 'api', key: JSON.stringify({ ...JSON.parse(expired.key), instanceId: 'healthy', identity: 'b@example.test', access: 'other' }) };
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    const path = new URL(url).pathname;
+    if (path === '/api/v1/auth/login') {
+      const form = JSON.parse(init.body);
+      assert.equal(form.email, 'a@example.test');
+      if (form.password !== 'synthetic-password') return new Response(null, { status: 401 });
+      return Response.json({ access_token: 'new', refresh_token: 'new-refresh', user: { email: form.email } });
+    }
+    if (path === '/api/v1/auth/refresh' || new Headers(init.headers).get('authorization') === 'Bearer old') return new Response(null, { status: 401 });
+    return Response.json(path === '/api/v1/auth/me' ? { balance: 8 } : {});
+  });
+  const card = auth => hooks.auth.usage(async () => auth, {});
+  assert.equal((await card(expired)).signIn, 'expired');
+  await assert.rejects(hooks.provider.models({ models: {} }, { auth: expired }), { signIn: 'expired' });
+  assert.equal((await card(other)).balance, '$8.00');
+  const authorize = hooks.auth.methods[1].authorize;
+  assert.deepEqual(await authorize({ email: 'a@example.test', password: 'invalid' }), { type: 'failed', error: 'AIHub 拒绝登录，请核对邮箱和密码。' });
+  const again = await authorize({ email: ' a@example.test ', password: 'synthetic-password' });
+  assert.equal(again.type, 'success');
+  assert.equal(again.metadata.email, JSON.parse(expired.key).identity);
+  assert.ok(!JSON.stringify(again).includes('synthetic-password'));
+  const recovered = await card(again);
+  assert.equal(recovered.error, undefined);
+  assert.equal(recovered.balance, '$8.00');
+  assert.notEqual((await card(other)).signIn, 'expired');
+});
+
 test('model discovery failure keeps the provider catalogue instead of blanking it', async () => {
   const hooks = await entry.server({ client: {} });
   const key = JSON.stringify({ version: 1, mode: 'managed', instanceId: 'catalogue-fallback', access: 'expired-access', keys: [] });

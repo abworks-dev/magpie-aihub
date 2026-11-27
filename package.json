@@ -1,6 +1,6 @@
 {
   "name": "magpie-aihub",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "description": "Magpie 的 AIHub 自动路由插件：按倍率与延迟选组，保持会话亲和，故障时在有界次数内切换。",
   "type": "module",
   "main": "./index.mjs",

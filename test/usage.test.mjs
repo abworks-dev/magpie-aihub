@@ -131,6 +131,23 @@ test('a failed read says why, and still names the local spend', async () => {
   assert.deepEqual(card.windows, [{ name: '本次运行', display: '7 次请求 · $1.50', used: null, aside: true }]);
 });
 
+test('Magpie gets an explicit lapse even when a cached wallet is still available', async () => {
+  for (const billing of [undefined, { balance: 7, balanceKnown: true, platforms: [] }]) {
+    const card = await usageCard(managed(billing, { billingError: 'billing_session_expired' }), {});
+    assert.equal(card.signIn, 'expired');
+    assert.match(card.error, /该账号旁点「重新登录」/);
+    if (billing) assert.equal(card.balance, '$7.00');
+  }
+});
+
+test('a cached wallet or an inconclusive read cannot change a previous sign-in verdict', async () => {
+  const billing = { balance: 7, balanceKnown: true };
+  for (const billingError of [undefined, 'billing_access_denied', 'billing_unavailable', 'billing_sign_in_required']) {
+    const card = await usageCard(managed(billing, { billing, billingError }), {});
+    assert.equal(card.signIn, 'kept');
+  }
+});
+
 test('imported group keys have no wallet or platform budget, and say so', async () => {
   let asked = 0;
   const card = await usageCard({

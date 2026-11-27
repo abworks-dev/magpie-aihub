@@ -18,11 +18,10 @@ const share = (amount, limit) => (limit > 0 ? Math.max(0, Math.round((amount / l
 const finite = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
 
 // The reasons billing reads fail, in the reader's language. They come from
-// Account.billingInfo, which sets one code and keeps the previous snapshot up
-// to maxStaleMs; the card shows the code only when there is nothing to show.
+// Account.billingInfo, which sets one code and may return a cached snapshot.
 const billingErrors = {
   billing_sign_in_required: 'AIHub 登录已失效，请重新登录后刷新',
-  billing_session_expired: 'AIHub 会话已过期，请重新登录后刷新',
+  billing_session_expired: 'AIHub 会话已过期。请在「供应商 → AIHub Auto」的该账号旁点「重新登录」，使用同一个邮箱。',
   billing_access_denied: '该 AIHub 账户不允许读取额度',
   billing_unavailable: 'AIHub 未回应额度查询，稍后自动重试',
 };
@@ -97,19 +96,29 @@ export async function usageCard(item, options, { signal } = {}) {
     return card;
   }
 
+  const previousBilling = account.billing;
   let billing;
   try {
     billing = await account.billingInfo(options, signal);
   } catch (error) {
     // billingInfo keeps its own reason for a failed read; anything thrown past
     // it is the read being aborted or the account data being unusable.
-    return { ...card, windows: [spendWindow(item, options)], error: String(error?.message ?? error ?? '额度读取失败') };
+    return { ...card, signIn: 'kept', windows: [spendWindow(item, options)], error: String(error?.message ?? error ?? '额度读取失败') };
   }
 
+  // Tell the host about expiry even when billingInfo can still show a cached balance.
+  const billingError = account.billingError;
+  if (account.keyState && account.keyState.owner !== account) return { ...card, signIn: 'kept' };
+  if (billingError === 'billing_session_expired') {
+    card.signIn = 'expired';
+    card.error = billingErrors[billingError];
+  } else if (billingError || !billing || billing === previousBilling) {
+    // Other failures and stale data cannot confirm a change in sign-in state.
+    card.signIn = 'kept';
+  }
   if (!billing) {
     card.windows = [spendWindow(item, options)];
-    const code = billingErrors[account.billingError] ?? (account.billingError ? '额度读取失败' : '');
-    if (code) card.error = code;
+    if (billingError) card.error = billingErrors[billingError] ?? '额度读取失败';
     return card;
   }
 

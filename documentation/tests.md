@@ -1,5 +1,16 @@
 # 测试覆盖与验收记录
 
+## v0.9.5 账户会话过期恢复
+
+2026-11-27，本地 Windows / Node 24 对本版执行 `node --test`：324 项通过，失败、取消、跳过均为 0；`npm run check` exit 0；`npm pack --dry-run` 为 30 个预期文件、版本 0.9.5。新增/改动测试：
+
+- `test/plugin.test.mjs`：账户续期 401 时 `provider.models` 钩子抛带 `signIn: 'expired'` 的结构化错误，宿主据此保留上次模型列表并标记该账号；非过期失败仍回退旧目录。
+- `test/usage.test.mjs`：`billingError === 'billing_session_expired'` 时即使仍有缓存余额也发送 `signIn: 'expired'`；仅缓存、中性失败或已替换账号的旧实例记为 `kept`，不误标。
+- `test/account.test.mjs`：`a delayed account 401 takes priority over an earlier billing endpoint failure`——`/api/v1/auth/me` 慢 401 与更快的额度接口 503 并发时，结果定为 `billing_session_expired`，不被 `billing_unavailable` 掩盖。
+- `test/ui.test.mjs`：监控页按账号显示过期提示，即使该账号仍有缓存余额。
+
+**未端到端验证**：官方 Magpie v0.1.4840 源码已核对 `auth.usage` 的 `signIn: 'expired'` 标记、`provider.models` 错误分类与账号行原生「Sign in again」按钮链路；但隔离宿主激活被 Bun 运行时阻塞（`Bun runtime not ready: downloading Bun 1.4.2`，官方归档 GET 30s 超时、系统 PATH Bun 与 Windows 不兼容），故真实宿主 UI、同邮箱写入与第二账号保留均未实测，合成测试不能代替这一步。
+
 ## v0.7.5 用量卡片（Magpie auth.usage）
 
 2026-11-18 05:50 +08，本地 Windows / Node 对本版执行 `node --test`：278 项通过，失败、取消、跳过均为 0；`npm run check`（含新增 `src/usage.mjs`）exit 0。新增 `src/usage.mjs` 与 `test/usage.test.mjs`，覆盖两类证据：

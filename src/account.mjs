@@ -81,14 +81,25 @@ export class Account {
   // in front of every caller, so routing and the monitor can say "sign in again".
   async renewSession(signal) {
     try { return await this.renew(signal); }
-    catch (error) { throw error?.status === 401 ? new SessionExpired() : error; }
+    catch (error) {
+      if (error?.status !== 401) throw error;
+      const expired = new SessionExpired();
+      if (this.keyState.owner === this) expired.signIn = 'expired';
+      throw expired;
+    }
   }
   async call(path, args = {}) {
     const usedAccess = this.data.access;
     const invoke = () => api(path, { ...args, token: this.data.access, fetcher: this.fetcher });
     try { return await invoke(); }
     catch (e) {
-      if (!(e instanceof ApiError) || e.status !== 401 || !this.data.refresh) throw e;
+      if (!(e instanceof ApiError) || e.status !== 401) throw e;
+      if (!this.data.refresh) {
+        if (path === '/api/v1/auth/me' && this.data.mode === 'managed') {
+          throw new SessionExpired('AIHub 拒绝了当前登录凭据，且该账户没有可用的续期令牌。');
+        }
+        throw e;
+      }
       // Separate refresh lock: call() can execute inside a key mutation transaction.
       if (this.data.access === usedAccess) {
         if (!this.refreshingAuth) this.refreshingAuth = this.renewSession(args.signal).finally(() => { this.refreshingAuth = undefined; });

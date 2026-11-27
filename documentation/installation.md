@@ -2,13 +2,13 @@
 
 ## 安装
 
-**v0.9.4 为预发布版本。** 在已登录的 Magpie 插件管理页添加以下 Git 来源：
+**v0.9.5 为预发布版本。** 在已登录的 Magpie 插件管理页添加以下 Git 来源：
 
 ```text
 github:abworks-dev/magpie-aihub
 ```
 
-不带 `#ref` 的写法跟随仓库 main，Magpie 的「更新」才会真正生效。需要复现固定版本时写 `github:abworks-dev/magpie-aihub#v0.9.4`（轻量标签）：固定 ref 会持续显示「有新版本」，因为 Magpie 比较仓库 HEAD 与已装 commit，而点更新不会改变 pin；这是宿主行为（[yetone/magpie#6952](https://github.com/yetone/magpie/issues/6952)）。
+不带 `#ref` 的写法跟随仓库 main，Magpie 的「更新」才会真正生效。需要复现固定版本时写 `github:abworks-dev/magpie-aihub#v0.9.5`（轻量标签）：固定 ref 会持续显示「有新版本」，因为 Magpie 比较仓库 HEAD 与已装 commit，而点更新不会改变 pin；这是宿主行为（[yetone/magpie#6952](https://github.com/yetone/magpie/issues/6952)）。
 
 仓库公开，不需向插件提供 GitHub Token。服务器必须能访问 GitHub 及 Magpie 插件运行时。推理路由无需编译或新增代理监听；页面服务随插件启动，设置与只读监控在同一页面。已有验证限于 local mock、官方 CLI 隔离宿主和 Edge 合成代理；真实生产联调未验证。六平台外部接口只经公开文档/公开代码核对，不等于真实六平台实测。
 
@@ -37,6 +37,12 @@ magpie plugin --json
 ```
 
 容器外另一用户的 CLI 不等于容器实例。优先使用现有官方管理页，不让运维 Agent 绕过文件权限。opc-agent 生产私有路径的拒绝不可通过其他路径、身份或复制凭据绕过。不要公开 Key、密码、认证 JSON 或完整诊断输出。
+
+## 账户会话过期时重新登录
+
+在 Magpie「供应商 → AIHub Auto」找到过期账号，点该行的「重新登录」，选择「AIHub 账户登录」，输入原账号的邮箱和密码。成功后 Magpie 按邮箱更新已有账号。回到供应商页点「重新获取模型」，再到用量页刷新额度。
+
+在旧插件上还看不到按钮时，可点「添加另一个 AIHub Auto 账号」，选择同一登录方式并使用原邮箱。另一个邮箱会作为另一个账号加入。密码只在 Magpie 的密码框中输入。
 
 ## 先使用手工分组 Key
 

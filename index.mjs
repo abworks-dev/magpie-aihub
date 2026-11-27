@@ -119,10 +119,19 @@ async function AIHubPlugin({ client }, initialOptions = {}) {
           ],
           authorize: async (inputs, context = {}) => {
             try {
-              const tokens = await login(inputs.email, inputs.password, undefined, context.signal);
+              const email = typeof inputs?.email === 'string' ? inputs.email.trim() : '';
+              if (!email || typeof inputs?.password !== 'string' || !inputs.password) {
+                return { type: 'failed', error: '请输入 AIHub 邮箱和密码。' };
+              }
+              const tokens = await login(email, inputs.password, undefined, context.signal);
               const data = { version: 1, mode: 'managed', instanceId: randomUUID(), ...tokens, keys: [] };
               return { type: 'success', key: JSON.stringify(data), metadata: { email: data.identity } };
-            } catch { return { type: 'failed' }; }
+            } catch (error) {
+              const reason = error?.status === 401 ? 'AIHub 拒绝登录，请核对邮箱和密码。'
+                : error?.status === 429 ? 'AIHub 登录请求过多，请稍后重试。'
+                : 'AIHub 登录未完成，请检查 AIHub 网站或稍后重试。';
+              return { type: 'failed', error: reason };
+            }
           },
         },
       ],
@@ -148,8 +157,9 @@ async function AIHubPlugin({ client }, initialOptions = {}) {
         const item = runtime(auth);
         const ids = await item.router.discover(signal)
           .catch(error => {
-            // A dead session must not blank the provider catalogue: keep the models
-            // Magpie already knows so the connection stays selectable and retryable.
+            // Magpie marks this account and keeps its last catalogue when the
+            // hook throws a confirmed expiry. Other failures fall back locally.
+            if (error?.signIn === 'expired') throw error;
             // One repeated failure should not flood the host log on every refresh.
             const detail = String(error?.message ?? error ?? 'unknown error');
             if (detail !== lastDiscoveryError) {
